@@ -62,64 +62,19 @@ class _DataManagementPageState extends State<DataManagementPage> {
     try {
       final documentsDir = await getApplicationDocumentsDirectory();
       final documentsPath = documentsDir.path;
-      final xwechatPath = '$documentsPath${Platform.pathSeparator}xwechat_files';
+      
+      // 优先使用用户配置的数据库路径
+      String? configuredPath = await _configService.getDatabasePath();
       
       _databaseFiles.clear();
 
-      final baseDir = Directory(xwechatPath);
-      if (await baseDir.exists()) {
-        // 查找所有 wxid_xxx 目录
-        final wxidDirs = await baseDir.list().where((entity) {
-          return entity is Directory && 
-                 entity.path.split(Platform.pathSeparator).last.startsWith('wxid_');
-        }).toList();
-
-        for (final wxidDir in wxidDirs) {
-          final wxidName = wxidDir.path.split(Platform.pathSeparator).last;
-          final dbStoragePath = '${wxidDir.path}${Platform.pathSeparator}db_storage';
-          final dbStorageDir = Directory(dbStoragePath);
-          
-          if (await dbStorageDir.exists()) {
-            // 递归查找所有 .db 文件
-            final dbFiles = await _findAllDbFiles(dbStorageDir);
-            
-            for (final dbFile in dbFiles) {
-              final fileName = dbFile.path.split(Platform.pathSeparator).last;
-              final fileSize = await dbFile.length();
-              
-              // 获取源文件修改时间
-              final originalStat = await dbFile.stat();
-              final originalModified = originalStat.modified;
-              
-              // 检查是否已经解密
-              final ourWorkDir = Directory('$documentsPath${Platform.pathSeparator}EchoTrace');
-              final decryptedFileName = '${fileName.split('.').first}.db';
-              final decryptedFilePath = '${ourWorkDir.path}${Platform.pathSeparator}$wxidName${Platform.pathSeparator}$decryptedFileName';
-              final decryptedFile = File(decryptedFilePath);
-              
-              final isDecrypted = await decryptedFile.exists();
-              DateTime? decryptedModified;
-              
-              if (isDecrypted) {
-                // 获取备份文件修改时间
-                final decryptedStat = await decryptedFile.stat();
-                decryptedModified = decryptedStat.modified;
-              }
-              
-              _databaseFiles.add(DatabaseFile(
-                originalPath: dbFile.path,
-                fileName: fileName,
-                fileSize: fileSize,
-                wxidName: wxidName,
-                isDecrypted: isDecrypted,
-                decryptedPath: decryptedFilePath,
-                originalModified: originalModified,
-                decryptedModified: decryptedModified,
-              ));
-            }
-          }
-        }
+      // 如果没有配置路径，使用默认路径
+      if (configuredPath == null || configuredPath.isEmpty) {
+        configuredPath = '$documentsPath${Platform.pathSeparator}xwechat_files';
       }
+      
+      // 智能识别路径类型并扫描数据库
+      await _scanDatabasePath(configuredPath, documentsPath);
 
       // 按文件大小排序，小的在前
       _databaseFiles.sort((a, b) => a.fileSize.compareTo(b.fileSize));
@@ -132,6 +87,100 @@ class _DataManagementPageState extends State<DataManagementPage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  /// 智能扫描数据库路径
+  Future<void> _scanDatabasePath(String basePath, String documentsPath) async {
+    final baseDir = Directory(basePath);
+    if (!await baseDir.exists()) {
+      return;
+    }
+
+    final pathParts = basePath.split(Platform.pathSeparator);
+    final lastPart = pathParts.isNotEmpty ? pathParts.last : '';
+
+    // 判断路径类型并采取不同的扫描策略
+    if (lastPart == 'db_storage') {
+      // 情况1：用户直接选择了 db_storage 目录
+      // 从路径中提取 wxid
+      String? wxidName;
+      if (pathParts.length >= 2) {
+        final parentDirName = pathParts[pathParts.length - 2];
+        if (parentDirName.startsWith('wxid_')) {
+          wxidName = parentDirName;
+        }
+      }
+      
+      await _scanDbStorageDirectory(baseDir, wxidName ?? 'unknown', documentsPath);
+      
+    } else if (lastPart.startsWith('wxid_')) {
+      // 情况2：用户选择了 wxid_xxx 目录
+      final wxidName = lastPart;
+      final dbStoragePath = '$basePath${Platform.pathSeparator}db_storage';
+      final dbStorageDir = Directory(dbStoragePath);
+      
+      if (await dbStorageDir.exists()) {
+        await _scanDbStorageDirectory(dbStorageDir, wxidName, documentsPath);
+      }
+      
+    } else {
+      // 情况3：用户选择了上层目录（如 xwechat_files），扫描所有 wxid 目录
+      final wxidDirs = await baseDir.list().where((entity) {
+        return entity is Directory && 
+               entity.path.split(Platform.pathSeparator).last.startsWith('wxid_');
+      }).toList();
+
+      for (final wxidDir in wxidDirs) {
+        final wxidName = wxidDir.path.split(Platform.pathSeparator).last;
+        final dbStoragePath = '${wxidDir.path}${Platform.pathSeparator}db_storage';
+        final dbStorageDir = Directory(dbStoragePath);
+        
+        if (await dbStorageDir.exists()) {
+          await _scanDbStorageDirectory(dbStorageDir, wxidName, documentsPath);
+        }
+      }
+    }
+  }
+
+  /// 扫描 db_storage 目录下的所有数据库文件
+  Future<void> _scanDbStorageDirectory(Directory dbStorageDir, String wxidName, String documentsPath) async {
+    // 递归查找所有 .db 文件
+    final dbFiles = await _findAllDbFiles(dbStorageDir);
+    
+    for (final dbFile in dbFiles) {
+      final fileName = dbFile.path.split(Platform.pathSeparator).last;
+      final fileSize = await dbFile.length();
+      
+      // 获取源文件修改时间
+      final originalStat = await dbFile.stat();
+      final originalModified = originalStat.modified;
+      
+      // 检查是否已经解密
+      final ourWorkDir = Directory('$documentsPath${Platform.pathSeparator}EchoTrace');
+      final decryptedFileName = '${fileName.split('.').first}.db';
+      final decryptedFilePath = '${ourWorkDir.path}${Platform.pathSeparator}$wxidName${Platform.pathSeparator}$decryptedFileName';
+      final decryptedFile = File(decryptedFilePath);
+      
+      final isDecrypted = await decryptedFile.exists();
+      DateTime? decryptedModified;
+      
+      if (isDecrypted) {
+        // 获取备份文件修改时间
+        final decryptedStat = await decryptedFile.stat();
+        decryptedModified = decryptedStat.modified;
+      }
+      
+      _databaseFiles.add(DatabaseFile(
+        originalPath: dbFile.path,
+        fileName: fileName,
+        fileSize: fileSize,
+        wxidName: wxidName,
+        isDecrypted: isDecrypted,
+        decryptedPath: decryptedFilePath,
+        originalModified: originalModified,
+        decryptedModified: decryptedModified,
+      ));
     }
   }
 
