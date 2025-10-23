@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import 'dart:typed_data';
 import '../providers/app_state.dart';
 import '../services/config_service.dart';
 import '../services/decrypt_service.dart';
+import '../services/image_decrypt_service.dart';
 import '../services/logger_service.dart';
 
 /// 数据管理页面
@@ -15,17 +17,20 @@ class DataManagementPage extends StatefulWidget {
   State<DataManagementPage> createState() => _DataManagementPageState();
 }
 
-class _DataManagementPageState extends State<DataManagementPage> {
+class _DataManagementPageState extends State<DataManagementPage> with SingleTickerProviderStateMixin {
   final ConfigService _configService = ConfigService();
   late final DecryptService _decryptService;
+  late final ImageDecryptService _imageDecryptService;
+  late final TabController _tabController;
   
+  // 数据库文件相关
   List<DatabaseFile> _databaseFiles = [];
   bool _isLoading = false;
   String? _statusMessage;
   bool _isSuccess = false;
   String? _derivedKey; // 缓存派生后的密钥
   
-  // 解密进度相关
+  // 数据库解密进度相关
   bool _isDecrypting = false;
   int _totalFiles = 0;
   int _completedFiles = 0;
@@ -39,16 +44,36 @@ class _DataManagementPageState extends State<DataManagementPage> {
   // 进度节流相关
   final Map<String, DateTime> _lastProgressUpdateMap = {}; // 每个文件独立的节流时间戳
 
+  // 图片文件相关
+  List<ImageFile> _imageFiles = [];
+  bool _isLoadingImages = false;
+  String? _imageStatusMessage;
+  bool _isImageSuccess = false;
+  bool _showOnlyUndecrypted = false; // 只显示未解密的文件
+  int _displayLimit = 1000; // 默认显示前1000条
+  String _imageQualityFilter = 'all'; // 'all', 'original', 'thumbnail' - 图片质量过滤
+  
+  // 图片解密进度相关
+  bool _isDecryptingImages = false;
+  int _totalImageFiles = 0;
+  int _completedImageFiles = 0;
+  String _currentDecryptingImage = '';
+  Map<String, bool> _imageDecryptResults = {}; // 记录每个图片的解密结果
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _decryptService = DecryptService();
     _decryptService.initialize();
+    _imageDecryptService = ImageDecryptService();
     _loadDatabaseFiles();
+    _loadImageFiles();
   }
 
   @override
   void dispose() {
+    _tabController.dispose();
     _decryptService.dispose();
     super.dispose();
   }
@@ -730,113 +755,565 @@ class _DataManagementPageState extends State<DataManagementPage> {
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
+  // ========== 图片解密相关方法 ==========
+
+  /// 加载图片文件列表
+  Future<void> _loadImageFiles() async {
+    if (!mounted) return;
+    
+    // 防止重复扫描
+    if (_isLoadingImages) {
+      await logger.warning('DataManagementPage', '图片扫描已在进行中，跳过本次请求');
+      return;
+    }
+    
+    setState(() {
+      _isLoadingImages = true;
+      _imageFiles.clear(); // 清空列表在setState中，确保UI立即更新
+      _displayLimit = 1000; // 重置显示限制
+      _showOnlyUndecrypted = false; // 重置过滤
+      _imageQualityFilter = 'all'; // 重置质量过滤
+    });
+
+    try {
+      await logger.info('DataManagementPage', '开始扫描图片文件...');
+      
+      final documentsDir = await getApplicationDocumentsDirectory();
+      final documentsPath = documentsDir.path;
+      
+      // 获取配置的路径
+      String? configuredPath = await _configService.getDatabasePath();
+
+      if (configuredPath == null || configuredPath.isEmpty) {
+        configuredPath = '$documentsPath${Platform.pathSeparator}xwechat_files';
+      }
+      
+      await logger.info('DataManagementPage', '配置路径: $configuredPath');
+      
+      // 扫描图片文件
+      await _scanImagePath(configuredPath, documentsPath);
+
+      // 按文件大小排序
+      _imageFiles.sort((a, b) => a.fileSize.compareTo(b.fileSize));
+      
+      await logger.info('DataManagementPage', '图片扫描完成，共找到 ${_imageFiles.length} 个文件');
+      
+      if (_imageFiles.isNotEmpty) {
+        _showImageMessage('找到 ${_imageFiles.length} 个图片文件', true);
+      }
+    } catch (e, stackTrace) {
+      await logger.error('DataManagementPage', '加载图片文件失败', e, stackTrace);
+      _showImageMessage('加载图片文件失败: $e', false);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingImages = false;
+        });
+      }
+    }
+  }
+
+  /// 智能扫描图片路径（参考数据库扫描逻辑）
+  Future<void> _scanImagePath(String basePath, String documentsPath) async {
+    final baseDir = Directory(basePath);
+    if (!await baseDir.exists()) {
+      await logger.warning('DataManagementPage', '图片扫描：目录不存在 $basePath');
+      return;
+    }
+
+    final pathParts = basePath.split(Platform.pathSeparator);
+    final lastPart = pathParts.isNotEmpty ? pathParts.last : '';
+
+    await logger.info('DataManagementPage', '开始扫描图片文件，路径: $basePath, 最后部分: $lastPart');
+
+    // 判断路径类型并采取不同的扫描策略
+    if (lastPart == 'db_storage') {
+      // 情况1：用户选择了 db_storage 目录
+      // 需要回到父目录（wxid目录）来扫描图片
+      if (pathParts.length >= 2) {
+        final wxidPath = pathParts.sublist(0, pathParts.length - 1).join(Platform.pathSeparator);
+        final wxidDir = Directory(wxidPath);
+        
+        await logger.info('DataManagementPage', '检测到db_storage路径，扫描wxid目录: $wxidPath');
+        
+        if (await wxidDir.exists()) {
+          await _scanWxidImageDirectory(wxidDir, documentsPath);
+        }
+      }
+    } else if (lastPart.startsWith('wxid_')) {
+      // 情况2：用户选择了 wxid_xxx 目录
+      await logger.info('DataManagementPage', '检测到wxid目录，直接扫描: $basePath');
+      await _scanWxidImageDirectory(baseDir, documentsPath);
+    } else {
+      // 情况3：用户选择了上层目录（如 xwechat_files），扫描所有 wxid 目录
+      await logger.info('DataManagementPage', '检测到上层目录，扫描所有wxid子目录');
+      
+      final entities = await baseDir.list().toList();
+      final wxidDirs = entities.where((entity) {
+        return entity is Directory && 
+               entity.path.split(Platform.pathSeparator).last.startsWith('wxid_');
+      }).toList();
+
+      await logger.info('DataManagementPage', '找到 ${wxidDirs.length} 个wxid目录');
+
+      for (final wxidDir in wxidDirs) {
+        await _scanWxidImageDirectory(wxidDir as Directory, documentsPath);
+      }
+    }
+  }
+
+  /// 获取图片质量统计信息
+  Future<String> _getImageQualityStats() async {
+    if (_imageFiles.isEmpty) return '';
+
+    final originalCount = _imageFiles.where((f) => f.imageQuality == 'original').length;
+    final thumbnailCount = _imageFiles.where((f) => f.imageQuality == 'thumbnail').length;
+    final unknownCount = _imageFiles.where((f) => f.imageQuality == 'unknown').length;
+
+    return '原图: $originalCount • 缩略图: $thumbnailCount${unknownCount > 0 ? ' • 未知: $unknownCount' : ''}';
+  }
+
+  /// 检测图片质量类型（原图/缩略图）
+  String _detectImageQuality(String relativePath, int fileSize) {
+    final pathLower = relativePath.toLowerCase();
+    final fileNameLower = relativePath.split(Platform.pathSeparator).last.toLowerCase();
+
+    // 文件大小判断（这是主要依据）
+    if (fileSize < 50 * 1024) { // 小于50KB，很可能是缩略图
+      return 'thumbnail';
+    } else if (fileSize > 500 * 1024) { // 大于500KB，很可能是原图
+      return 'original';
+    }
+
+    // 路径关键词判断
+    if (pathLower.contains('thumb') ||
+        pathLower.contains('small') ||
+        pathLower.contains('preview') ||
+        pathLower.contains('thum') ||
+        fileNameLower.contains('thumb') ||
+        fileNameLower.contains('small')) {
+      return 'thumbnail';
+    }
+
+    // 文件名模式判断
+    // 微信缩略图通常有特定后缀或模式
+    if (fileNameLower.contains('_t') ||
+        fileNameLower.endsWith('_thumb.dat') ||
+        fileNameLower.endsWith('_small.dat')) {
+      return 'thumbnail';
+    }
+
+    // 路径深度判断
+    // 通常原图在Image目录下，缩略图可能在子目录中
+    final pathParts = relativePath.split(Platform.pathSeparator);
+    if (pathParts.length > 3) { // 路径较深，可能是缩略图
+      return 'thumbnail';
+    }
+
+    // 默认判断为原图（文件大小适中的情况）
+    return 'original';
+  }
+
+  /// 扫描单个wxid目录下的图片（优化版：快速扫描，延迟检查解密状态）
+  Future<void> _scanWxidImageDirectory(Directory wxidDir, String documentsPath) async {
+    int foundCount = 0;
+    int updateThreshold = 0; // 每100个文件更新一次UI
+    
+    try {
+      await logger.info('DataManagementPage', '开始扫描wxid目录: ${wxidDir.path}');
+      
+      // 查找所有 .dat 文件（递归搜索）
+      await for (final entity in wxidDir.list(recursive: true)) {
+        if (entity is File) {
+          final filePath = entity.path.toLowerCase();
+          
+          // 只处理 .dat 文件
+          if (!filePath.endsWith('.dat')) {
+            continue;
+          }
+          
+          // 跳过数据库文件
+          if (filePath.contains('db_storage') || filePath.contains('database')) {
+            continue;
+          }
+
+          final fileName = entity.path.split(Platform.pathSeparator).last;
+          
+          try {
+            final fileSize = await entity.length();
+
+            // 跳过太小的文件（可能不是图片）
+            if (fileSize < 100) {
+              continue;
+            }
+
+            // 获取相对路径
+            final relativePath = entity.path.replaceFirst(wxidDir.path, '');
+
+            // 检测图片质量类型
+            final imageQuality = _detectImageQuality(relativePath, fileSize);
+
+            // 计算解密后的路径（不检查是否存在，加快扫描速度）
+            final outputDir = Directory('$documentsPath${Platform.pathSeparator}EchoTrace${Platform.pathSeparator}Images');
+            final decryptedPath = '${outputDir.path}$relativePath'.replaceAll('.dat', '.jpg');
+
+            // 快速扫描：不检测版本和解密状态（解密时再检测）
+            _imageFiles.add(ImageFile(
+              originalPath: entity.path,
+              fileName: fileName,
+              fileSize: fileSize,
+              relativePath: relativePath,
+              isDecrypted: false, // 默认未解密，批量解密时会自动跳过已存在的
+              decryptedPath: decryptedPath,
+              version: 0, // 默认V3，解密时自动检测
+              imageQuality: imageQuality,
+            ));
+            
+            foundCount++;
+            
+            // 每100个文件更新一次UI，减少setState频率
+            if (foundCount > updateThreshold) {
+              updateThreshold = foundCount + 100;
+              if (mounted) {
+                setState(() {}); // 触发UI更新显示当前数量
+              }
+            }
+          } catch (e) {
+            // 单个文件出错不影响整体扫描
+          }
+        }
+      }
+      
+      await logger.info('DataManagementPage', 'wxid目录扫描完成，找到 $foundCount 个图片文件');
+    } catch (e, stackTrace) {
+      await logger.error('DataManagementPage', '扫描目录失败: ${wxidDir.path}', e, stackTrace);
+    }
+  }
+
+  /// 批量解密图片
+  Future<void> _decryptAllImages() async {
+    // 应用当前筛选条件获取需要解密的图片列表
+    List<ImageFile> filteredFiles = _imageFiles;
+
+    // 应用质量过滤
+    if (_imageQualityFilter != 'all') {
+      filteredFiles = filteredFiles.where((f) => f.imageQuality == _imageQualityFilter).toList();
+    }
+
+    // 应用解密状态过滤
+    if (_showOnlyUndecrypted) {
+      filteredFiles = filteredFiles.where((f) => !f.isDecrypted).toList();
+    }
+
+    if (filteredFiles.isEmpty) {
+      _showImageMessage('当前筛选条件下没有需要解密的图片文件', false);
+      return;
+    }
+
+    // 检查密钥配置
+    final xorKeyHex = await _configService.getImageXorKey();
+    final aesKeyHex = await _configService.getImageAesKey();
+
+    if (xorKeyHex == null || xorKeyHex.isEmpty) {
+      _showImageMessage('未配置图片解密密钥，请在设置中配置 XOR 和 AES 密钥', false);
+      return;
+    }
+
+    setState(() {
+      _isDecryptingImages = true;
+      _totalImageFiles = filteredFiles.length; // 初始化为筛选后的总数
+      _completedImageFiles = 0;
+      _imageDecryptResults.clear();
+    });
+
+    try {
+      final xorKey = ImageDecryptService.hexToXorKey(xorKeyHex);
+      Uint8List? aesKey;
+
+      if (aesKeyHex != null && aesKeyHex.isNotEmpty && aesKeyHex.length >= 16) {
+        aesKey = ImageDecryptService.hexToBytes16(aesKeyHex);
+      }
+
+      int successCount = 0;
+      int failCount = 0;
+
+      // 第一次遍历：标记已存在的文件并计算需要解密的数量
+      int needDecryptCount = 0;
+      for (final imageFile in filteredFiles) {
+        final outputFile = File(imageFile.decryptedPath);
+        if (await outputFile.exists()) {
+          imageFile.isDecrypted = true;
+        } else {
+          needDecryptCount++;
+        }
+      }
+
+      // 更新总数
+      setState(() {
+        _totalImageFiles = needDecryptCount;
+      });
+
+      // 第二次遍历：只解密需要解密的文件（仅处理筛选后的文件）
+      for (final imageFile in filteredFiles) {
+        if (imageFile.isDecrypted) {
+          continue; // 跳过已存在的文件
+        }
+
+        setState(() {
+          _currentDecryptingImage = imageFile.fileName;
+        });
+
+        try {
+          // 创建输出目录
+          final outputFile = File(imageFile.decryptedPath);
+          final outputDir = outputFile.parent;
+          if (!await outputDir.exists()) {
+            await outputDir.create(recursive: true);
+          }
+
+          // 解密（使用异步方法确保数据完整性）
+          await _imageDecryptService.decryptDatAutoAsync(
+            imageFile.originalPath,
+            imageFile.decryptedPath,
+            xorKey,
+            aesKey,
+          );
+
+          imageFile.isDecrypted = true;
+          _imageDecryptResults[imageFile.fileName] = true;
+          successCount++;
+
+          await logger.info('DataManagementPage', '图片解密成功: ${imageFile.fileName}');
+        } catch (e) {
+          _imageDecryptResults[imageFile.fileName] = false;
+          failCount++;
+          await logger.error('DataManagementPage', '图片解密失败: ${imageFile.fileName}', e);
+        }
+
+        setState(() {
+          _completedImageFiles++;
+        });
+      }
+
+      _showImageMessage(
+        '图片解密完成！成功: $successCount, 失败: $failCount',
+        failCount == 0,
+      );
+    } catch (e, stackTrace) {
+      await logger.error('DataManagementPage', '批量解密图片失败', e, stackTrace);
+      _showImageMessage('批量解密失败: $e', false);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDecryptingImages = false;
+          _currentDecryptingImage = '';
+        });
+      }
+    }
+  }
+
+  /// 解密单个图片
+  Future<void> _decryptSingleImage(ImageFile imageFile) async {
+    // 检查密钥配置
+    final xorKeyHex = await _configService.getImageXorKey();
+    final aesKeyHex = await _configService.getImageAesKey();
+
+    if (xorKeyHex == null || xorKeyHex.isEmpty) {
+      _showImageMessage('未配置图片解密密钥', false);
+      return;
+    }
+
+    try {
+      final xorKey = ImageDecryptService.hexToXorKey(xorKeyHex);
+      Uint8List? aesKey;
+      
+      if (aesKeyHex != null && aesKeyHex.isNotEmpty && aesKeyHex.length >= 16) {
+        aesKey = ImageDecryptService.hexToBytes16(aesKeyHex);
+      }
+
+      // 创建输出目录
+      final outputFile = File(imageFile.decryptedPath);
+      final outputDir = outputFile.parent;
+      if (!await outputDir.exists()) {
+        await outputDir.create(recursive: true);
+      }
+
+      // 解密（使用异步方法确保数据完整性）
+      await _imageDecryptService.decryptDatAutoAsync(
+        imageFile.originalPath,
+        imageFile.decryptedPath,
+        xorKey,
+        aesKey,
+      );
+
+      setState(() {
+        imageFile.isDecrypted = true;
+      });
+
+      _showImageMessage('解密成功: ${imageFile.fileName}', true);
+      await logger.info('DataManagementPage', '图片解密成功: ${imageFile.fileName}');
+    } catch (e, stackTrace) {
+      await logger.error('DataManagementPage', '解密失败: ${imageFile.fileName}', e, stackTrace);
+      _showImageMessage('解密失败: $e', false);
+    }
+  }
+
+  void _showImageMessage(String message, bool success) {
+    if (!mounted) return;
+    setState(() {
+      _imageStatusMessage = message;
+      _isImageSuccess = success;
+    });
+
+    // 3秒后清除消息
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _imageStatusMessage = null;
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Column(
         children: [
-          // 顶部导航栏
+          // Tab栏
           Container(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
             decoration: BoxDecoration(
               color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.grey.shade200,
+                  width: 1,
                 ),
-              ],
+              ),
             ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios),
-                  onPressed: () {
-                    context.read<AppState>().setCurrentPage('chat');
-                  },
-                  style: IconButton.styleFrom(
-                    foregroundColor: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                  ),
+            child: TabBar(
+              controller: _tabController,
+              tabs: const [
+                Tab(
+                  text: '数据库文件',
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  '数据管理',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                // 增量更新按钮
-                if (_databaseFiles.any((file) => file.needsUpdate))
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: OutlinedButton.icon(
-                      onPressed: (_isLoading || _isDecrypting) ? null : _updateChanged,
-                      icon: const Icon(Icons.update),
-                      label: Text('增量更新 (${_databaseFiles.where((f) => f.needsUpdate).length})'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.orange,
-                        side: BorderSide(color: Colors.orange.shade400),
-                      ),
-                    ),
-                  ),
-                // 批量解密按钮
-                ElevatedButton.icon(
-                  onPressed: (_isLoading || _isDecrypting) ? null : _decryptAllPending,
-                  icon: _isDecrypting
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2, 
-                          value: _totalFiles > 0 ? _completedFiles / _totalFiles : null
-                        ),
-                      )
-                    : const Icon(Icons.play_arrow),
-                  label: Text(_isDecrypting ? '正在解密...' : '批量解密'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Colors.white,
-                  ),
+                Tab(
+                  text: '图片文件',
                 ),
               ],
+              labelColor: Theme.of(context).colorScheme.primary,
+              unselectedLabelColor: Colors.grey,
+              indicatorColor: Theme.of(context).colorScheme.primary,
+              indicatorWeight: 3,
             ),
           ),
           
-          // 内容区域
+          // Tab内容区域
           Expanded(
-            child: _isLoading && _databaseFiles.isEmpty
-              ? const Center(child: CircularProgressIndicator())
-              : _databaseFiles.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.folder_open,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '未找到数据库文件',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '请确保微信数据目录存在',
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
-                          ),
-                        ),
-                      ],
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                // 数据库文件页面
+                _buildDatabaseTab(),
+                // 图片文件页面
+                _buildImageTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 构建数据库文件Tab页面
+  Widget _buildDatabaseTab() {
+    return Column(
+      children: [
+        // 操作按钮栏
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Spacer(),
+              // 增量更新按钮
+              if (_databaseFiles.any((file) => file.needsUpdate))
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: OutlinedButton.icon(
+                    onPressed: (_isLoading || _isDecrypting) ? null : _updateChanged,
+                    icon: const Icon(Icons.update),
+                    label: Text('增量更新 (${_databaseFiles.where((f) => f.needsUpdate).length})'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.orange,
+                      side: BorderSide(color: Colors.orange.shade400),
                     ),
-                  )
-                : Column(
+                  ),
+                ),
+              // 批量解密按钮
+              ElevatedButton.icon(
+                onPressed: (_isLoading || _isDecrypting) ? null : _decryptAllPending,
+                icon: _isDecrypting
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2, 
+                        value: _totalFiles > 0 ? _completedFiles / _totalFiles : null
+                      ),
+                    )
+                  : const Icon(Icons.play_arrow),
+                label: Text(_isDecrypting ? '正在解密...' : '批量解密'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // 列表区域
+        Expanded(
+          child: _isLoading && _databaseFiles.isEmpty
+            ? const Center(child: CircularProgressIndicator())
+            : _databaseFiles.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.folder_open,
+                        size: 64,
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '未找到数据库文件',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '请确保微信数据目录存在',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
                     children: [
                       // 解密进度显示
                       if (_isDecrypting)
@@ -970,9 +1447,8 @@ class _DataManagementPageState extends State<DataManagementPage> {
                       ),
                     ],
                   ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -1120,6 +1596,850 @@ class _DataManagementPageState extends State<DataManagementPage> {
       ),
     );
   }
+
+  /// 构建图片文件Tab页面（现代化UI）
+  Widget _buildImageTab() {
+    return Column(
+      children: [
+        // 顶部信息和操作栏
+        Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Theme.of(context).colorScheme.primary.withOpacity(0.05),
+                Theme.of(context).colorScheme.primary.withOpacity(0.02),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              width: 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              // 统计信息
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.photo_library_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_imageFiles.length}',
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        Text(
+                          '图片文件',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // 显示质量统计
+                        FutureBuilder<String>(
+                          future: _getImageQualityStats(),
+                          builder: (context, snapshot) {
+                            if (snapshot.hasData) {
+                              return Text(
+                                snapshot.data!,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.grey.shade500,
+                                ),
+                              );
+                            }
+                            return const SizedBox.shrink();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 操作按钮
+                  Row(
+                    children: [
+                      // 刷新按钮
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          onTap: (_isLoadingImages || _isDecryptingImages) ? null : _loadImageFiles,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isLoadingImages)
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  )
+                                else
+                                  Icon(
+                                    Icons.refresh_rounded,
+                                    size: 18,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _isLoadingImages ? '扫描中' : '刷新',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      // 批量解密按钮
+                      Material(
+                        color: Theme.of(context).colorScheme.primary,
+                        borderRadius: BorderRadius.circular(12),
+                        elevation: 0,
+                        child: InkWell(
+                          onTap: (_isLoadingImages || _isDecryptingImages || _imageFiles.isEmpty) ? null : _decryptAllImages,
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (_isDecryptingImages)
+                                  SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                      value: _totalImageFiles > 0 ? _completedImageFiles / _totalImageFiles : null,
+                                    ),
+                                  )
+                                else
+                                  const Icon(
+                                    Icons.lock_open_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _isDecryptingImages ? '解密中' : '批量解密',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // 列表区域
+        Expanded(
+          child: _isLoadingImages && _imageFiles.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 60,
+                      height: 60,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 4,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      '正在扫描图片文件...',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (_imageFiles.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        '已找到 ${_imageFiles.length} 个文件',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 8),
+                    Text(
+                      '这可能需要一些时间，请稍候',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : _imageFiles.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.image_not_supported,
+                          size: 64,
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '未找到图片文件',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.help_outline,
+                                    size: 20,
+                                    color: Colors.blue.shade700,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '可能的原因',
+                                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      color: Colors.blue.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '1. 微信图片目录为空\n'
+                                '2. 配置的路径不正确（应选择wxid目录或db_storage的父目录）\n'
+                                '3. 图片文件不在常见位置（FileStorage/Image 或 Msg/attach）\n\n'
+                                '💡 建议：点击刷新按钮重新扫描，或在设置中重新选择微信数据目录',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.blue.shade600,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        OutlinedButton.icon(
+                          onPressed: _loadImageFiles,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重新扫描'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : Column(
+                  children: [
+                    // 解密进度显示
+                    if (_isDecryptingImages)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(20),
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Theme.of(context).colorScheme.primary.withOpacity(0.08),
+                              Theme.of(context).colorScheme.primary.withOpacity(0.04),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                            width: 1,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Theme.of(context).colorScheme.primary,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '正在解密图片',
+                                        style: TextStyle(
+                                          color: Theme.of(context).colorScheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _currentDecryptingImage,
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                          fontSize: 12,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Text(
+                                  '${((_completedImageFiles / _totalImageFiles) * 100).toStringAsFixed(0)}%',
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: LinearProgressIndicator(
+                                value: _totalImageFiles > 0 ? _completedImageFiles / _totalImageFiles : 0,
+                                minHeight: 6,
+                                backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                                valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '$_completedImageFiles / $_totalImageFiles 个文件',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  '剩余 ${_totalImageFiles - _completedImageFiles} 个',
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // 状态消息
+                    if (_imageStatusMessage != null)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        margin: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: _isImageSuccess
+                              ? Colors.green.withOpacity(0.1)
+                              : Colors.red.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _isImageSuccess ? Colors.green : Colors.red,
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              _isImageSuccess ? Icons.check_circle : Icons.error,
+                              color: _isImageSuccess ? Colors.green : Colors.red,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _imageStatusMessage!,
+                                style: TextStyle(
+                                  color: _isImageSuccess ? Colors.green : Colors.red,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // 图片列表
+                    Expanded(
+                      child: _buildImageList(),
+                    ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建图片列表（带过滤和分页）
+  Widget _buildImageList() {
+    // 应用过滤
+    List<ImageFile> filteredFiles = _imageFiles;
+
+    // 应用质量过滤
+    if (_imageQualityFilter != 'all') {
+      filteredFiles = filteredFiles.where((f) => f.imageQuality == _imageQualityFilter).toList();
+    }
+
+    // 应用解密状态过滤
+    if (_showOnlyUndecrypted) {
+      filteredFiles = filteredFiles.where((f) => !f.isDecrypted).toList();
+    }
+
+    // 应用显示限制
+    final displayFiles = filteredFiles.take(_displayLimit).toList();
+    final hasMore = filteredFiles.length > _displayLimit;
+    
+    return Column(
+      children: [
+        // 过滤和统计信息栏
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            children: [
+              // 第一行：解密状态过滤
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Transform.scale(
+                          scale: 0.85,
+                          child: Switch(
+                            value: _showOnlyUndecrypted,
+                            onChanged: (value) {
+                              setState(() {
+                                _showOnlyUndecrypted = value;
+                              });
+                            },
+                            activeColor: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '只显示未解密',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 统计标签
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${displayFiles.length}/${filteredFiles.length}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // 第二行：图片质量过滤
+              Row(
+                children: [
+                  Text(
+                    '质量:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // 质量过滤按钮组
+                  ...['all', 'original', 'thumbnail'].map((quality) {
+                    final isSelected = _imageQualityFilter == quality;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Material(
+                        color: isSelected ? Theme.of(context).colorScheme.primary : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _imageQualityFilter = quality;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey.shade300,
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              quality == 'all' ? '全部' :
+                              quality == 'original' ? '原图' : '缩略图',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: isSelected ? Colors.white : Colors.grey.shade700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ],
+          ),
+        ),
+        
+        // 加载更多提示
+        if (hasMore)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.orange.shade50,
+                  Colors.orange.shade50.withOpacity(0.5),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: Colors.orange.shade700,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '显示前 $_displayLimit 条，共 ${filteredFiles.length} 条',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.orange.shade800,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                Material(
+                  color: Colors.orange.shade600,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _displayLimit += 1000;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        '加载更多',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        // 文件列表
+        Expanded(
+          child: displayFiles.isEmpty
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _showOnlyUndecrypted ? Icons.done_all_rounded : Icons.image_search_rounded,
+                        size: 48,
+                        color: Colors.grey.shade400,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      _showOnlyUndecrypted ? '所有文件都已解密' : '没有图片文件',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _showOnlyUndecrypted
+                        ? '可以关闭过滤查看全部文件'
+                        : _imageQualityFilter == 'original'
+                          ? '未找到原图文件，尝试选择"全部"查看所有图片'
+                          : '点击刷新按钮重新扫描，或检查微信数据目录是否正确',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                physics: const BouncingScrollPhysics(),
+                itemCount: displayFiles.length,
+                itemBuilder: (context, index) {
+                  final imageFile = displayFiles[index];
+                  return _buildImageCard(imageFile);
+                },
+              ),
+        ),
+      ],
+    );
+  }
+
+  /// 构建图片文件卡片
+  Widget _buildImageCard(ImageFile imageFile) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: imageFile.isDecrypted 
+            ? Colors.green.withOpacity(0.2)
+            : Colors.grey.shade200,
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: imageFile.isDecrypted ? null : (_isDecryptingImages ? null : () => _decryptSingleImage(imageFile)),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                // 状态图标
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: imageFile.isDecrypted 
+                      ? Colors.green.withOpacity(0.1)
+                      : Colors.grey.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    imageFile.isDecrypted ? Icons.check_circle_rounded : Icons.image_outlined,
+                    color: imageFile.isDecrypted ? Colors.green.shade600 : Colors.grey.shade500,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 14),
+
+                // 文件信息
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          // 质量标签
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: imageFile.imageQuality == 'original'
+                                ? Colors.blue.withOpacity(0.1)
+                                : Colors.orange.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              imageFile.imageQuality == 'original' ? '原图' : '缩略图',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: imageFile.imageQuality == 'original'
+                                  ? Colors.blue.shade700
+                                  : Colors.orange.shade700,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 文件名
+                          Expanded(
+                            child: Text(
+                              imageFile.fileName,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey.shade800,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${_formatFileSize(imageFile.fileSize)} • V${imageFile.version == 0 ? 3 : 4}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // 状态或操作按钮
+                if (imageFile.isDecrypted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '已解密',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey.shade400,
+                    size: 20,
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 数据库文件信息
@@ -1180,4 +2500,27 @@ class DatabaseFile {
       decryptedModified: decryptedModified ?? this.decryptedModified,
     );
   }
+}
+
+/// 图片文件数据模型
+class ImageFile {
+  final String originalPath;
+  final String fileName;
+  final int fileSize;
+  final String relativePath; // 相对于图片根目录的路径
+  bool isDecrypted;
+  final String decryptedPath;
+  int version; // 0=V3, 1=V4-V1, 2=V4-V2
+  String imageQuality; // 'original', 'thumbnail', 'unknown'
+
+  ImageFile({
+    required this.originalPath,
+    required this.fileName,
+    required this.fileSize,
+    required this.relativePath,
+    required this.isDecrypted,
+    required this.decryptedPath,
+    this.version = 0,
+    this.imageQuality = 'unknown',
+  });
 }

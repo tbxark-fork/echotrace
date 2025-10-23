@@ -23,10 +23,14 @@ class _SettingsPageState extends State<SettingsPage> {
   final _formKey = GlobalKey<FormState>();
   final _keyController = TextEditingController();
   final _pathController = TextEditingController();
+  final _imageXorKeyController = TextEditingController();
+  final _imageAesKeyController = TextEditingController();
   final _configService = ConfigService();
   late final DecryptService _decryptService;
   
   bool _obscureKey = true;
+  bool _obscureImageXorKey = true;
+  bool _obscureImageAesKey = true;
   bool _isLoading = false;
   String? _statusMessage;
   bool _isSuccess = false;
@@ -44,6 +48,8 @@ class _SettingsPageState extends State<SettingsPage> {
   void dispose() {
     _keyController.dispose();
     _pathController.dispose();
+    _imageXorKeyController.dispose();
+    _imageAesKeyController.dispose();
     _decryptService.dispose();
     super.dispose();
   }
@@ -52,12 +58,16 @@ class _SettingsPageState extends State<SettingsPage> {
     final key = await _configService.getDecryptKey();
     final path = await _configService.getDatabasePath();
     final mode = await _configService.getDatabaseMode();
+    final imageXorKey = await _configService.getImageXorKey();
+    final imageAesKey = await _configService.getImageAesKey();
 
     if (mounted) {
       setState(() {
         _keyController.text = key ?? '';
         _pathController.text = path ?? '';
         _databaseMode = mode;
+        _imageXorKeyController.text = imageXorKey ?? '';
+        _imageAesKeyController.text = imageAesKey ?? '';
       });
     }
   }
@@ -227,11 +237,21 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final key = _keyController.text.trim();
       final path = _pathController.text.trim();
+      final imageXorKey = _imageXorKeyController.text.trim();
+      final imageAesKey = _imageAesKeyController.text.trim();
 
       // 保存配置
       await _configService.saveDecryptKey(key);
       await _configService.saveDatabasePath(path);
       await _configService.saveDatabaseMode(_databaseMode);
+      
+      // 保存图片解密密钥（可选）
+      if (imageXorKey.isNotEmpty) {
+        await _configService.saveImageXorKey(imageXorKey);
+      }
+      if (imageAesKey.isNotEmpty) {
+        await _configService.saveImageAesKey(imageAesKey);
+      }
 
       // 更新应用状态
       if (mounted) {
@@ -325,6 +345,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const Spacer(),
+                // 测试连接按钮
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _testConnection,
+                  label: const Text('测试连接'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 保存按钮
+                ElevatedButton.icon(
+                  onPressed: _isLoading ? null : _saveConfig,
+                  label: const Text('保存配置'),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                ),
               ],
             ),
           ),
@@ -340,6 +378,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     // 主配置卡片
                     _buildConfigCard(context),
+                    const SizedBox(height: 24),
+                    
+                    // 图片解密配置卡片
+                    _buildImageDecryptCard(context),
                     const SizedBox(height: 24),
                     
                     // 数据库模式选择卡片
@@ -551,44 +593,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
               ),
 
-            // 操作按钮
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _testConnection,
-                    icon: _isLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_circle_outline),
-                    label: const Text('测试连接'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _isLoading ? null : _saveConfig,
-                    icon: const Icon(Icons.save),
-                    label: const Text('保存配置'),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
@@ -622,6 +626,202 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+
+  Widget _buildImageDecryptCard(BuildContext context) {
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题区域
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.image,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '微信图片解密配置',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '配置图片解密所需的XOR和AES密钥（可选）',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+
+            // XOR密钥输入区域
+            _buildInputSection(
+              context,
+              title: 'XOR密钥',
+              subtitle: '2位十六进制密钥（支持0x前缀），例如：0x53 或 53',
+              child: TextFormField(
+                controller: _imageXorKeyController,
+                obscureText: _obscureImageXorKey,
+                decoration: InputDecoration(
+                  hintText: '例如: A3',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2.0),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureImageXorKey ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () {
+                      setState(() {
+                        _obscureImageXorKey = !_obscureImageXorKey;
+                      });
+                    },
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return null; // 可选字段
+                  }
+                  if (value.length < 2) {
+                    return 'XOR密钥至少需要2个字符';
+                  }
+                  if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(value)) {
+                    return '密钥必须为十六进制格式';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // AES密钥输入区域
+            _buildInputSection(
+              context,
+              title: 'AES密钥',
+              subtitle: '至少16个字符的字母数字字符串，从微信进程内存获取',
+              child: TextFormField(
+                controller: _imageAesKeyController,
+                obscureText: _obscureImageAesKey,
+                decoration: InputDecoration(
+                  hintText: '例如: b18052363165af7e...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Theme.of(context).colorScheme.primary, width: 2.0),
+                  ),
+                  suffixIcon: IconButton(
+                    icon: Icon(_obscureImageAesKey ? Icons.visibility : Icons.visibility_off),
+                    onPressed: () {
+                      setState(() {
+                        _obscureImageAesKey = !_obscureImageAesKey;
+                      });
+                    },
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return null; // 可选字段
+                  }
+                  final cleanValue = value.trim();
+                  if (cleanValue.length < 16) {
+                    return 'AES密钥至少需要16个字符';
+                  }
+                  if (!RegExp(r'^[0-9a-zA-Z]+$').hasMatch(cleanValue)) {
+                    return '密钥必须为字母数字格式';
+                  }
+                  return null;
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // 提示信息
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '用于解密微信加密图片文件（.dat格式）',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '• XOR密钥：整数格式，如 0x52 或 52\n• AES密钥：十六进制字符串，如 b180578900456123',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildDatabaseModeCard(BuildContext context) {
     const wechatGreen = Color(0xFF07C160);

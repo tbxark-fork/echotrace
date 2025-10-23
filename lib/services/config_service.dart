@@ -6,6 +6,8 @@ class ConfigService {
   static const String _keyDatabasePath = 'database_path';
   static const String _keyIsConfigured = 'is_configured';
   static const String _keyDatabaseMode = 'database_mode'; // 'realtime' 或 'backup'
+  static const String _keyImageXorKey = 'image_xor_key'; // 图片XOR密钥
+  static const String _keyImageAesKey = 'image_aes_key'; // 图片AES密钥
 
   /// 保存解密密钥
   Future<void> saveDecryptKey(String key) async {
@@ -55,6 +57,30 @@ class ConfigService {
     return prefs.getString(_keyDatabaseMode) ?? 'backup';
   }
 
+  /// 保存图片XOR密钥
+  Future<void> saveImageXorKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyImageXorKey, key);
+  }
+
+  /// 获取图片XOR密钥
+  Future<String?> getImageXorKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyImageXorKey);
+  }
+
+  /// 保存图片AES密钥
+  Future<void> saveImageAesKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyImageAesKey, key);
+  }
+
+  /// 获取图片AES密钥
+  Future<String?> getImageAesKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyImageAesKey);
+  }
+
   /// 清除所有配置
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
@@ -62,5 +88,7 @@ class ConfigService {
     await prefs.remove(_keyDatabasePath);
     await prefs.remove(_keyIsConfigured);
     await prefs.remove(_keyDatabaseMode);
+    await prefs.remove(_keyImageXorKey);
+    await prefs.remove(_keyImageAesKey);
   }
 }

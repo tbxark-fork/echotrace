@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/chat_session.dart';
@@ -495,34 +494,7 @@ class _ChatPageState extends State<ChatPage> with SingleTickerProviderStateMixin
       }
     }
   }
-
-  /// 获取会话的所有消息
-  Future<List<Message>> _getAllMessages(AppState appState) async {
-    if (_selectedSession == null) return [];
-
-    final List<Message> allMessages = [];
-    int offset = 0;
-    const int limit = 1000;
-
-    while (true) {
-      final messages = await appState.databaseService.getMessages(
-        _selectedSession!.username,
-        limit: limit,
-        offset: offset,
-      );
-
-      if (messages.isEmpty) break;
-
-      allMessages.addAll(messages);
-      offset += messages.length;
-
-      if (messages.length < limit) break;
-    }
-
-    return allMessages.reversed.toList();
-  }
-
-
+  
   ///根据日期选择消息
   Future<List<Message>> _getAllMessagesBydate(AppState appState,int beginTimestamp,int endTimestamp) async {
     if (_selectedSession == null) return [];
