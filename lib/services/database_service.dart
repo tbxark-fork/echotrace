@@ -501,7 +501,6 @@ class DatabaseService {
 
       return allMessages;
     } catch (e) {
-      print('获取消息列表失败: $e');
       throw Exception('获取消息列表失败: $e');
     }
   }

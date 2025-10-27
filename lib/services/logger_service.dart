@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 
@@ -19,15 +20,31 @@ class LoggerService {
 
   File? _logFile;
   bool _isInitialized = false;
+  bool _isInIsolate = false;
   final int _maxLogSize = 5 * 1024 * 1024; // 5MB
   final DateFormat _dateFormat = DateFormat('yyyy-MM-dd HH:mm:ss.SSS');
 
+  /// 供后台 Isolate 使用的简化模式，禁用文件写入和初始化
+  void enableIsolateMode() {
+    _isInIsolate = true;
+    _isInitialized = true;
+    _logFile = null;
+  }
+
+  bool get isInIsolateMode => _isInIsolate;
+
   /// 初始化日志服务
   Future<void> initialize() async {
-    if (_isInitialized) return;
+    if (_isInitialized || _isInIsolate) return;
 
     try {
-      final tempDir = await getTemporaryDirectory();
+      final tempDir = await getTemporaryDirectory().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          // 在Isolate中可能无法访问平台通道，跳过初始化
+          throw TimeoutException('获取临时目录超时（可能在Isolate中）');
+        },
+      );
       final logDir = Directory('${tempDir.path}${Platform.pathSeparator}echotrace_logs');
       
       if (!await logDir.exists()) {
@@ -47,8 +64,9 @@ class LoggerService {
       _isInitialized = true;
       await _writeLog(LogLevel.info, 'LoggerService', '日志服务初始化成功');
     } catch (e) {
-      // 如果初始化失败，至少记录到控制台
-      print('日志服务初始化失败: $e');
+      // 如果初始化失败（例如在Isolate中），标记为已初始化但不写入文件
+      _isInitialized = true;
+      _logFile = null;
     }
   }
 
@@ -63,12 +81,15 @@ class LoggerService {
       await _logFile!.delete();
       await _logFile!.create();
     } catch (e) {
-      print('归档日志文件失败: $e');
     }
   }
 
   /// 写入日志
   Future<void> _writeLog(LogLevel level, String tag, String message, [Object? error, StackTrace? stackTrace]) async {
+    if (_isInIsolate) {
+      return;
+    }
+
     if (!_isInitialized) {
       await initialize();
     }
@@ -97,14 +118,15 @@ class LoggerService {
           mode: FileMode.append,
           flush: true,
         );
+      } else {
+        // 如果没有日志文件（例如在Isolate中），静默忽略
       }
 
       // 同时输出到控制台
       if (level == LogLevel.error || level == LogLevel.fatal) {
-        print(logMessage.toString());
       }
     } catch (e) {
-      print('写入日志失败: $e');
+      // 静默失败，避免在Isolate中出现问题
     }
   }
 
@@ -213,7 +235,6 @@ class LoggerService {
         await _writeLog(LogLevel.info, 'LoggerService', '日志已清空');
       }
     } catch (e) {
-      print('清空日志失败: $e');
     }
   }
 

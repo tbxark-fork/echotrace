@@ -40,7 +40,6 @@ class DecryptService {
       // 调用 Go FFI 验证密钥
       return _ffi.validateKey(dbPath, hexKey);
     } catch (e) {
-      print('验证密钥错误: $e');
       return false;
     }
   }

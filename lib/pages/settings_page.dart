@@ -294,8 +294,13 @@ class _SettingsPageState extends State<SettingsPage> {
       final key = _keyController.text.trim();
       final path = _pathController.text.trim();
       final wxid = _wxidController.text.trim();
-      final imageXorKey = _imageXorKeyController.text.trim();
+      var imageXorKey = _imageXorKeyController.text.trim();
       final imageAesKey = _imageAesKeyController.text.trim();
+
+      // 移除XOR密钥的0x前缀（如果有）
+      if (imageXorKey.toLowerCase().startsWith('0x')) {
+        imageXorKey = imageXorKey.substring(2);
+      }
 
       // 保存配置
       await _configService.saveDecryptKey(key);
@@ -751,7 +756,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 controller: _imageXorKeyController,
                 obscureText: _obscureImageXorKey,
                 decoration: InputDecoration(
-                  hintText: '例如: A3',
+                  hintText: '例如: 0x53 或 A3',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: Colors.grey.shade300, width: 1.5),
@@ -769,10 +774,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   if (value == null || value.isEmpty) {
                     return null; // 可选字段
                   }
-                  if (value.length < 2) {
-                    return 'XOR密钥至少需要2个字符';
+                  // 移除可能的0x前缀
+                  final cleanValue = value.toLowerCase().startsWith('0x') 
+                      ? value.substring(2) 
+                      : value;
+                  if (cleanValue.length < 2) {
+                    return 'XOR密钥至少需要2个十六进制字符';
                   }
-                  if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(value)) {
+                  if (!RegExp(r'^[0-9a-fA-F]+$').hasMatch(cleanValue)) {
                     return '密钥必须为十六进制格式';
                   }
                   return null;

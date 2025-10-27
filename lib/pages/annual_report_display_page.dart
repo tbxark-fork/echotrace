@@ -15,6 +15,7 @@ import '../config/annual_report_texts.dart';
 import '../services/database_service.dart';
 import '../services/analytics_background_service.dart';
 import '../services/annual_report_cache_service.dart';
+import '../services/logger_service.dart';
 
 /// 年度报告展示页面，支持翻页滑动查看各个分析模块
 class AnnualReportDisplayPage extends StatefulWidget {
@@ -45,7 +46,8 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   AnalyticsBackgroundService? _backgroundService;
   Map<String, dynamic>? _reportData;
   bool _isGenerating = false;
-  final Map<String, String> _taskStatus = {};
+  String _currentTaskName = '';
+  String _currentTaskStatus = '';
   int _totalProgress = 0;
   int? _dbModifiedTime;
 
@@ -64,6 +66,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   Future<void> _initializeReport() async {
     final dbPath = widget.databaseService.dbPath;
     
+    // 每次初始化时都重新创建后台服务，确保使用最新的数据库路径
     if (dbPath != null) {
       _backgroundService = AnalyticsBackgroundService(dbPath);
     } else {
@@ -71,11 +74,14 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
     
     // 获取数据库修改时间
     if (dbPath != null) {
-      final dbFile = File(dbPath);
-      if (await dbFile.exists()) {
-        final stat = await dbFile.stat();
-        _dbModifiedTime = stat.modified.millisecondsSinceEpoch;
-      } else {
+      try {
+        final dbFile = File(dbPath);
+        if (await dbFile.exists()) {
+          final stat = await dbFile.stat();
+          _dbModifiedTime = stat.modified.millisecondsSinceEpoch;
+        }
+      } catch (e) {
+        // 无法获取文件状态，继续执行
       }
     }
     
@@ -155,8 +161,16 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   }
   
   Future<void> _startGenerateReport() async {
+    await logger.info('AnnualReportPage', '_startGenerateReport 被调用');
+    
+    // 防止重复生成
+    if (_isGenerating) {
+      await logger.warning('AnnualReportPage', '已经在生成中，忽略重复调用');
+      return;
+    }
     
     if (_backgroundService == null) {
+      await logger.error('AnnualReportPage', '背景服务未初始化');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('服务未初始化，请检查数据库配置')),
@@ -165,46 +179,81 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
       return;
     }
     
+    await logger.info('AnnualReportPage', '设置生成状态为 true');
     setState(() {
       _isGenerating = true;
-      _taskStatus.clear();
+      _currentTaskName = '';
+      _currentTaskStatus = '';
       _totalProgress = 0;
     });
     
     try {
+      await logger.info('AnnualReportPage', '开始调用 generateFullAnnualReport');
       final data = await _backgroundService!.generateFullAnnualReport(
         widget.year,
-        (taskName, status, progress) {
+        (taskName, status, progress) async {
+          await logger.debug('AnnualReportPage', '进度更新: $taskName - $status - $progress%');
           if (mounted) {
             setState(() {
-              _taskStatus[taskName] = status;
+              _currentTaskName = taskName;
+              _currentTaskStatus = status;
               _totalProgress = progress;
             });
           }
         },
       );
       
+      await logger.info('AnnualReportPage', 'generateFullAnnualReport 返回结果');
+      
       // 保存数据库修改时间
       data['dbModifiedTime'] = _dbModifiedTime;
+      await logger.info('AnnualReportPage', '保存数据库修改时间: $_dbModifiedTime');
       
       // 保存到缓存
+      await logger.info('AnnualReportPage', '开始保存缓存');
       await AnnualReportCacheService.saveReport(widget.year, data);
+      await logger.info('AnnualReportPage', '缓存保存完成');
       
       if (mounted) {
+        await logger.info('AnnualReportPage', '更新UI状态');
         setState(() {
           _reportData = data;
           _isGenerating = false;
           _pages = null;
         });
+        await logger.info('AnnualReportPage', '开始构建页面');
         _buildPages();
+        await logger.info('AnnualReportPage', '页面构建完成');
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      await logger.error('AnnualReportPage', '生成报告失败: $e\n堆栈: $stackTrace');
+      
       if (mounted) {
         setState(() {
           _isGenerating = false;
+          _currentTaskName = '';
+          _currentTaskStatus = '';
+          _totalProgress = 0;
         });
+        
+        // 显示详细的错误信息
+        String errorMsg = '生成报告失败';
+        if (e.toString().contains('TimeoutException')) {
+          errorMsg = '生成报告超时，请稍后重试';
+        } else if (e.toString().contains('database')) {
+          errorMsg = '数据库访问失败，请检查数据库连接';
+        }
+        
+        await logger.error('AnnualReportPage', '显示错误消息: $errorMsg');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('生成报告失败: $e')),
+          SnackBar(
+            content: Text('$errorMsg\n\n详细信息：$e'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: '重试',
+              onPressed: _startGenerateReport,
+            ),
+          ),
         );
       }
     }
@@ -239,9 +288,14 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
     }
     
     // 有报告数据，显示报告
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: RawKeyboardListener(
+    return Theme(
+      data: ThemeData(
+        fontFamily: 'HarmonyOS Sans SC',
+        textTheme: const TextTheme().apply(fontFamily: 'HarmonyOS Sans SC'),
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: RawKeyboardListener(
         focusNode: FocusNode()..requestFocus(),
         autofocus: true,
         onKey: (event) {
@@ -356,16 +410,27 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
         ],
         ),
       ),
+      ),
     );
   }
   
   Widget _buildInitialScreen() {
     final yearText = widget.year != null ? '${widget.year}年' : '历史以来';
     
-    return Scaffold(
+    return Theme(
+      data: ThemeData(
+        fontFamily: 'HarmonyOS Sans SC',
+        textTheme: const TextTheme().apply(fontFamily: 'HarmonyOS Sans SC'),
+      ),
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('$yearText年度报告'),
+        title: Text(
+          '$yearText年度报告',
+          style: const TextStyle(
+            fontFamily: 'HarmonyOS Sans SC',
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: Colors.black87,
@@ -386,6 +451,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
                 color: Colors.black87,
+                fontFamily: 'HarmonyOS Sans SC',
               ),
             ),
             const SizedBox(height: 12),
@@ -394,6 +460,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey[600],
+                fontFamily: 'HarmonyOS Sans SC',
               ),
             ),
             const SizedBox(height: 48),
@@ -405,11 +472,16 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                 backgroundColor: const Color(0xFF07C160),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-                textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                textStyle: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: 'HarmonyOS Sans SC',
+                ),
               ),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -417,10 +489,20 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   Widget _buildGeneratingScreen() {
     final yearText = widget.year != null ? '${widget.year}年' : '历史以来';
     
-    return Scaffold(
+    return Theme(
+      data: ThemeData(
+        fontFamily: 'HarmonyOS Sans SC',
+        textTheme: const TextTheme().apply(fontFamily: 'HarmonyOS Sans SC'),
+      ),
+      child: Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('生成$yearText年度报告'),
+        title: Text(
+          '生成$yearText年度报告',
+          style: const TextStyle(
+            fontFamily: 'HarmonyOS Sans SC',
+          ),
+        ),
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: Colors.black87,
@@ -432,75 +514,111 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(
-                width: 120,
-                height: 120,
+                width: 200,
+                height: 200,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 120,
-                      height: 120,
-                      child: CircularProgressIndicator(
-                        value: _totalProgress / 100,
-                        strokeWidth: 8,
-                        backgroundColor: Colors.grey[200],
-                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF07C160)),
+                      width: 200,
+                      height: 200,
+                      child: TweenAnimationBuilder<double>(
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeInOut,
+                        tween: Tween<double>(
+                          begin: 0,
+                          end: _totalProgress / 100,
+                        ),
+                        builder: (context, value, child) {
+                          return CircularProgressIndicator(
+                            value: value,
+                            strokeWidth: 12,
+                            backgroundColor: Colors.grey[200],
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF07C160)),
+                          );
+                        },
                       ),
                     ),
-                    Text(
-                      '$_totalProgress%',
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF07C160),
+                    TweenAnimationBuilder<double>(
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeInOut,
+                      tween: Tween<double>(
+                        begin: 0,
+                        end: _totalProgress.toDouble(),
                       ),
+                      builder: (context, value, child) {
+                        return Text(
+                          '${value.toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 48,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF07C160),
+                            fontFamily: 'HarmonyOS Sans SC',
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 48),
-              const SizedBox(height: 32),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: _taskStatus.entries.map((entry) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.0, 0.3),
+                        end: Offset.zero,
+                      ).animate(CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      )),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _currentTaskName.isNotEmpty
+                    ? Column(
+                        key: ValueKey<String>('$_currentTaskName-$_currentTaskStatus'),
                         children: [
-                          Icon(
-                            entry.value == '完成' 
-                                ? Icons.check_circle 
-                                : Icons.radio_button_unchecked,
-                            size: 16,
-                            color: entry.value == '完成' 
-                                ? const Color(0xFF07C160) 
-                                : Colors.grey,
+                          Text(
+                            _currentTaskName,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.black87,
+                              fontFamily: 'HarmonyOS Sans SC',
+                            ),
+                            textAlign: TextAlign.center,
                           ),
-                          const SizedBox(width: 8),
-                          Expanded(
+                          const SizedBox(height: 16),
+                          AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 300),
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                              color: _currentTaskStatus == '已完成' 
+                                  ? const Color(0xFF07C160)
+                                  : Colors.grey[600],
+                              fontFamily: 'HarmonyOS Sans SC',
+                            ),
                             child: Text(
-                              '${entry.key}: ${entry.value}',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[700],
-                              ),
+                              _currentTaskStatus,
+                              textAlign: TextAlign.center,
                             ),
                           ),
                         ],
+                      )
+                    : const SizedBox.shrink(
+                        key: ValueKey<String>('empty'),
                       ),
-                    );
-                  }).toList(),
-                ),
               ),
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -523,6 +641,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   color: Colors.grey[500],
                   letterSpacing: 8,
                   fontWeight: FontWeight.w300,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
               const SizedBox(height: 48),
@@ -536,6 +655,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                     color: Color(0xFF07C160),
                     letterSpacing: 6,
                     height: 1.2,
+                    fontFamily: 'HarmonyOS Sans SC',
                   ),
                 ),
               ),
@@ -548,6 +668,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   fontWeight: FontWeight.w500,
                   color: Colors.black87,
                   letterSpacing: 4,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
               const SizedBox(height: 64),
@@ -565,6 +686,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   color: Colors.grey[600],
                   letterSpacing: 2,
                   height: 1.8,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
               FadeInText(
@@ -575,6 +697,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   color: Colors.grey[600],
                   letterSpacing: 2,
                   height: 1.8,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
               const SizedBox(height: 100),
@@ -585,6 +708,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   fontSize: 14,
                   color: Colors.grey[400],
                   letterSpacing: 1,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
               const SizedBox(height: 12),
@@ -595,6 +719,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   fontSize: 24,
                   color: Colors.grey[350],
                   fontWeight: FontWeight.w300,
+                  fontFamily: 'HarmonyOS Sans SC',
                 ),
               ),
             ],

@@ -41,7 +41,6 @@ class AnnualReportCacheService {
     try {
       return jsonDecode(jsonStr) as Map<String, dynamic>;
     } catch (e) {
-      print('加载报告失败: $e');
       return null;
     }
   }

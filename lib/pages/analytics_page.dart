@@ -24,11 +24,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   bool _isLoading = false;
   ChatStatistics? _overallStats;
   List<ContactRanking>? _contactRankings;
+  List<ContactRanking>? _allContactRankings; // 保存所有排名
   
   // 加载进度状态
   String _loadingStatus = '';
   int _processedCount = 0;
   int _totalCount = 0;
+  
+  // Top N 选择
+  int _topN = 10;
 
   @override
   void initState() {
@@ -92,7 +96,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
             if (!mounted) return;
             setState(() {
               _overallStats = cachedData['overallStats'];
-              _contactRankings = cachedData['contactRankings'];
+              _allContactRankings = cachedData['contactRankings'];
+              _contactRankings = _allContactRankings?.take(_topN).toList();
               _loadingStatus = '完成（使用缓存数据）';
               _isLoading = false;
             });
@@ -104,7 +109,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         if (!mounted) return;
         setState(() {
           _overallStats = cachedData['overallStats'];
-          _contactRankings = cachedData['contactRankings'];
+          _allContactRankings = cachedData['contactRankings'];
+          _contactRankings = _allContactRankings?.take(_topN).toList();
           _loadingStatus = '完成（从缓存加载）';
           _isLoading = false;
         });
@@ -151,7 +157,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     
     if (!mounted) return;
     setState(() {
-      _contactRankings = rankings;
+      _allContactRankings = rankings;
+      _contactRankings = rankings.take(_topN).toList();
       _loadingStatus = '完成';
     });
   }
@@ -240,7 +247,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     }
     
     rankings.sort((a, b) => b.messageCount.compareTo(a.messageCount));
-    return rankings.take(10).toList();
+    return rankings.take(50).toList();
   }
 
   @override
@@ -650,9 +657,33 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '聊天最多的联系人 Top 10',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  '聊天最多的联系人 Top $_topN',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment<int>(value: 10, label: Text('10')),
+                    ButtonSegment<int>(value: 20, label: Text('20')),
+                    ButtonSegment<int>(value: 50, label: Text('50')),
+                  ],
+                  selected: {_topN},
+                  onSelectionChanged: (Set<int> newSelection) {
+                    setState(() {
+                      _topN = newSelection.first;
+                      _contactRankings = _allContactRankings?.take(_topN).toList();
+                    });
+                  },
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             ..._contactRankings!.asMap().entries.map((entry) {

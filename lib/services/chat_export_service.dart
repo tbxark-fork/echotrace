@@ -53,7 +53,6 @@ class ChatExportService {
       await file.writeAsString(jsonString);
       return true;
     } catch (e) {
-      print('导出JSON失败: $e');
       return false;
     }
   }
@@ -90,7 +89,6 @@ class ChatExportService {
       await file.writeAsString(html);
       return true;
     } catch (e) {
-      print('导出HTML失败: $e');
       return false;
     }
   }
@@ -172,7 +170,6 @@ class ChatExportService {
       
       return false;
     } catch (e) {
-      print('导出Excel失败: $e');
       return false;
     }
   }

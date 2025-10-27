@@ -196,6 +196,7 @@ class ProgressRing extends StatelessWidget {
                   fontSize: size * 0.2,
                   fontWeight: FontWeight.bold,
                   color: color,
+                  fontFamily: 'HarmonyOS_SansSC',
                 ),
               ),
             ),
