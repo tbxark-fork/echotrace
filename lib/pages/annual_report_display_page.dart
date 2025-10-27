@@ -86,47 +86,71 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
     }
     
     // 检查缓存
+    await logger.info('AnnualReportPage', '检查缓存: year=${widget.year}, dbModifiedTime=${_dbModifiedTime}');
     final hasCache = await AnnualReportCacheService.hasReport(widget.year);
-    
+
     if (hasCache && _dbModifiedTime != null) {
       final cachedData = await AnnualReportCacheService.loadReport(widget.year);
       if (cachedData != null) {
+        await logger.info('AnnualReportPage', '找到缓存数据，检查时间戳');
         // 检查数据库是否有更新
         final cachedDbTime = cachedData['dbModifiedTime'] as int?;
+        await logger.info('AnnualReportPage', '缓存数据库时间: $cachedDbTime, 当前数据库时间: $_dbModifiedTime');
         final dbChanged = cachedDbTime == null || cachedDbTime < _dbModifiedTime!;
-        
+
         if (dbChanged) {
           // 数据库已更新，询问用户
+          await logger.info('AnnualReportPage', '数据库已更新，显示确认对话框');
           if (!mounted) return;
           final shouldRegenerate = await _showDatabaseChangedDialog();
-          
+
           if (shouldRegenerate == true) {
             // 重新生成
+            await logger.info('AnnualReportPage', '用户选择重新生成');
             await _startGenerateReport();
           } else {
             // 使用旧数据
+            await logger.info('AnnualReportPage', '用户选择使用旧数据');
             if (!mounted) return;
             setState(() {
               _reportData = cachedData;
               _pages = null;
+              try {
+                _buildPages();
+              } catch (e, stackTrace) {
+                logger.error('AnnualReportPage', '缓存数据页面构建失败', e, stackTrace);
+                // 页面构建失败时，重置状态并显示错误
+                _reportData = null;
+                _pages = null;
+                rethrow;
+              }
             });
-            _buildPages();
           }
         } else {
           // 使用缓存
+          await logger.info('AnnualReportPage', '使用缓存数据');
           if (!mounted) return;
           setState(() {
             _reportData = cachedData;
             _pages = null;
+            try {
+              _buildPages();
+            } catch (e, stackTrace) {
+              logger.error('AnnualReportPage', '缓存数据页面构建失败', e, stackTrace);
+              // 页面构建失败时，重置状态并显示错误
+              _reportData = null;
+              _pages = null;
+              rethrow;
+            }
           });
-          _buildPages();
         }
         return;
       }
     }
-    
-    // 没有缓存，需要生成
-    // 不自动生成，等待用户点击
+
+    await logger.info('AnnualReportPage', '没有缓存或缓存无效，自动开始生成: hasCache=$hasCache, dbModifiedTime=${_dbModifiedTime}');
+    // 自动生成缓存
+    await _startGenerateReport();
   }
   
   Future<bool?> _showDatabaseChangedDialog() async {
@@ -220,9 +244,17 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
           _reportData = data;
           _isGenerating = false;
           _pages = null;
+          try {
+            _buildPages();
+          } catch (e, stackTrace) {
+            logger.error('AnnualReportPage', '新报告数据页面构建失败', e, stackTrace);
+            // 页面构建失败时，重置状态并显示错误
+            _reportData = null;
+            _pages = null;
+            rethrow;
+          }
         });
         await logger.info('AnnualReportPage', '开始构建页面');
-        _buildPages();
         await logger.info('AnnualReportPage', '页面构建完成');
       }
     } catch (e, stackTrace) {
@@ -260,34 +292,80 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   }
 
   void _buildPages() {
-    _pages = [
-      _buildCoverPage(),
-      _buildIntroPage(),
-      _buildComprehensiveFriendshipPage(),
-      _buildMutualFriendsPage(),
-      _buildSocialInitiativePage(),
-      _buildPeakDayPage(),
-      _buildCheckInPage(),
-      _buildActivityPatternPage(),
-      _buildMidnightKingPage(),
-      _buildResponseSpeedPage(),
-      _buildEndingPage(),
-    ];
+    try {
+      logger.info('AnnualReportPage', '开始构建页面列表');
+      _pages = [
+        _buildCoverPage(),
+        _buildIntroPage(),
+        _buildComprehensiveFriendshipPage(),
+        _buildMutualFriendsPage(),
+        _buildSocialInitiativePage(),
+        _buildPeakDayPage(),
+        _buildCheckInPage(),
+        _buildActivityPatternPage(),
+        _buildMidnightKingPage(),
+        _buildResponseSpeedPage(),
+        _buildEndingPage(),
+      ];
+      logger.info('AnnualReportPage', '页面列表构建完成，共${_pages!.length}页');
+    } catch (e, stackTrace) {
+      logger.error('AnnualReportPage', '页面构建失败', e, stackTrace);
+      // 重新抛出异常，让上层处理
+      rethrow;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 如果没有报告数据且不在生成中，显示初始界面
-    if (_reportData == null && !_isGenerating) {
-      return _buildInitialScreen();
+    try {
+      logger.debug('AnnualReportPage', 'build方法被调用: _reportData=${_reportData != null}, _isGenerating=$_isGenerating, _pages=${_pages != null ? _pages!.length : 'null'}');
+
+      // 如果没有报告数据且不在生成中，显示初始界面
+      if (_reportData == null && !_isGenerating) {
+        logger.info('AnnualReportPage', '显示初始界面');
+        return _buildInitialScreen();
+      }
+
+      // 如果正在生成，显示进度界面
+      if (_isGenerating) {
+        logger.info('AnnualReportPage', '显示生成进度界面');
+        return _buildGeneratingScreen();
+      }
+
+      // 有报告数据，显示报告
+      if (_pages == null) {
+        // 页面正在构建中，显示加载状态
+        logger.warning('AnnualReportPage', '报告数据存在但页面列表为null');
+        return Theme(
+        data: ThemeData(
+          fontFamily: 'HarmonyOS Sans SC',
+          textTheme: const TextTheme().apply(fontFamily: 'HarmonyOS Sans SC'),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF07C160)),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '正在构建报告页面...',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontFamily: 'HarmonyOS Sans SC',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
-    
-    // 如果正在生成，显示进度界面
-    if (_isGenerating) {
-      return _buildGeneratingScreen();
-    }
-    
-    // 有报告数据，显示报告
+
+    logger.info('AnnualReportPage', '显示年度报告，页面数量: ${_pages!.length}');
     return Theme(
       data: ThemeData(
         fontFamily: 'HarmonyOS Sans SC',
@@ -300,7 +378,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
         autofocus: true,
         onKey: (event) {
           if (event is RawKeyDownEvent) {
-            if (event.logicalKey.keyLabel == 'Arrow Right' || 
+            if (event.logicalKey.keyLabel == 'Arrow Right' ||
                 event.logicalKey.keyLabel == 'Arrow Down' ||
                 event.logicalKey.keyLabel == 'Page Down') {
               // 下一页
@@ -310,7 +388,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   curve: Curves.easeInOut,
                 );
               }
-            } else if (event.logicalKey.keyLabel == 'Arrow Left' || 
+            } else if (event.logicalKey.keyLabel == 'Arrow Left' ||
                        event.logicalKey.keyLabel == 'Arrow Up' ||
                        event.logicalKey.keyLabel == 'Page Up') {
               // 上一页
@@ -412,8 +490,67 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
       ),
       ),
     );
+    } catch (e, stackTrace) {
+      logger.error('AnnualReportPage', 'build方法执行失败', e, stackTrace);
+      // 发生异常时，显示错误界面
+      return Theme(
+        data: ThemeData(
+          fontFamily: 'HarmonyOS Sans SC',
+          textTheme: const TextTheme().apply(fontFamily: 'HarmonyOS Sans SC'),
+        ),
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  size: 64,
+                  color: Colors.red,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '报告显示出错',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[800],
+                    fontFamily: 'HarmonyOS Sans SC',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '请尝试重新生成报告',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                    fontFamily: 'HarmonyOS Sans SC',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _reportData = null;
+                      _pages = null;
+                      _isGenerating = false;
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF07C160),
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('重新生成'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
   }
-  
+
   Widget _buildInitialScreen() {
     final yearText = widget.year != null ? '${widget.year}年' : '历史以来';
     

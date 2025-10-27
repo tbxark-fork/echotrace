@@ -455,15 +455,31 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         side: const BorderSide(color: wechatGreen, width: 1),
       ),
       child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => AnnualReportDisplayPage(
-                databaseService: widget.databaseService,
+        onTap: _isLoading ? null : () async {
+          // 显示加载状态
+          setState(() {
+            _isLoading = true;
+            _loadingStatus = '正在准备年度报告...';
+          });
+
+          try {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => AnnualReportDisplayPage(
+                  databaseService: widget.databaseService,
+                ),
               ),
-            ),
-          );
+            );
+          } finally {
+            // 隐藏加载状态
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+                _loadingStatus = '';
+              });
+            }
+          }
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(
@@ -493,11 +509,20 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   ],
                 ),
               ),
-              const Icon(
-                Icons.chevron_right,
-                color: Colors.grey,
-                size: 24,
-              ),
+              _isLoading
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(wechatGreen),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey,
+                      size: 24,
+                    ),
             ],
           ),
         ),
