@@ -382,7 +382,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1),
+          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: Row(
@@ -448,7 +448,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   color: Theme.of(
                     context,
-                  ).colorScheme.onSurface.withOpacity(0.6),
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
               ),
 
@@ -474,7 +474,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceVariant.withOpacity(0.3),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -708,7 +708,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),
@@ -761,7 +761,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   ],
                 ),
               );
-            }).toList(),
+            }),
           ],
         ),
       ),

@@ -1,4 +1,4 @@
-/// 数据分析结果模型
+// 分析数据模型
 
 /// 聊天统计数据
 class ChatStatistics {

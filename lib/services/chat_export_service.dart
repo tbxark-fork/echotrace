@@ -3,16 +3,18 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:syncfusion_flutter_xlsio/xlsio.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../models/message.dart';
 import '../models/chat_session.dart';
-import '../models/contact.dart';
 import '../models/contact_record.dart';
 import '../utils/path_utils.dart';
 import 'database_service.dart';
+import 'logger_service.dart';
 
 /// 聊天记录导出服务
 class ChatExportService {
   final DatabaseService _databaseService;
+  final Set<String> _missingDisplayNameLog = <String>{};
 
   ChatExportService(this._databaseService);
 
@@ -25,23 +27,57 @@ class ChatExportService {
     try {
       // 获取联系人详细信息
       final contactInfo = await _getContactInfo(session.username);
+      final senderUsernameSet = messages
+          .where(
+            (m) => m.senderUsername != null && m.senderUsername!.isNotEmpty,
+          )
+          .map((m) => m.senderUsername!)
+          .toSet();
 
-      final data = {
-        'session': {
-          'wxid': session.username,
-          'nickname':
-              contactInfo['nickname'] ??
-              session.displayName ??
-              session.username,
-          'remark': contactInfo['remark'] ?? '',
-          'displayName': session.displayName ?? session.username,
-          'type': session.typeDescription,
-          'lastTimestamp': session.lastTimestamp,
-          'messageCount': messages.length,
-        },
-        'messages': messages
-            .map(
-              (msg) => {
+      final rawMyWxid = _databaseService.currentAccountWxid ?? '';
+      final trimmedMyWxid = rawMyWxid.trim();
+      if (trimmedMyWxid.isNotEmpty) {
+        senderUsernameSet.add(trimmedMyWxid);
+      }
+      final myWxid = _sanitizeUsername(rawMyWxid);
+      if (myWxid.isNotEmpty) {
+        senderUsernameSet.add(myWxid);
+      }
+      final senderUsernames = senderUsernameSet.toList();
+
+      final senderDisplayNames = senderUsernames.isNotEmpty
+          ? await _databaseService.getDisplayNames(senderUsernames)
+          : <String, String>{};
+
+      final myContactInfo = rawMyWxid.isNotEmpty
+          ? await _getContactInfo(rawMyWxid)
+          : <String, String>{};
+      final myDisplayName = await _buildMyDisplayName(
+        rawMyWxid,
+        myContactInfo,
+      );
+
+      final messageItems = messages
+          .map(
+            (msg) {
+              final isSend = msg.isSend == 1;
+              final senderName = _resolveSenderDisplayName(
+                msg: msg,
+                session: session,
+                isSend: isSend,
+                contactInfo: contactInfo,
+                myContactInfo: myContactInfo,
+                senderDisplayNames: senderDisplayNames,
+                myDisplayName: myDisplayName,
+              );
+              final senderWxid = _resolveSenderUsername(
+                msg: msg,
+                session: session,
+                isSend: isSend,
+                myWxid: myWxid,
+              );
+
+              return {
                 'localId': msg.localId,
                 'createTime': msg.createTime,
                 'formattedTime': msg.formattedCreateTime,
@@ -49,11 +85,28 @@ class ChatExportService {
                 'localType': msg.localType,
                 'content': msg.displayContent,
                 'isSend': msg.isSend,
-                'senderUsername': msg.senderUsername,
+                'senderUsername': senderWxid.isEmpty ? null : senderWxid,
+                'senderDisplayName': senderName,
                 'source': msg.source,
-              },
-            )
-            .toList(),
+              };
+            },
+          )
+          .toList();
+
+      final data = {
+        'session': {
+          'wxid': _sanitizeUsername(session.username),
+          'nickname':
+              contactInfo['nickname'] ??
+              session.displayName ??
+              session.username,
+          'remark': _getRemarkOrAlias(contactInfo),
+          'displayName': session.displayName ?? session.username,
+          'type': session.typeDescription,
+          'lastTimestamp': session.lastTimestamp,
+          'messageCount': messages.length,
+        },
+        'messages': messageItems,
         'exportTime': DateTime.now().toIso8601String(),
       };
 
@@ -94,22 +147,35 @@ class ChatExportService {
       final contactInfo = await _getContactInfo(session.username);
 
       // 获取所有发送者的显示名称
-      final senderUsernames = messages
+      final senderUsernameSet = messages
           .where(
             (m) => m.senderUsername != null && m.senderUsername!.isNotEmpty,
           )
           .map((m) => m.senderUsername!)
-          .toSet()
-          .toList();
+          .toSet();
+
+      final rawMyWxid = _databaseService.currentAccountWxid ?? '';
+      final trimmedMyWxid = rawMyWxid.trim();
+      if (trimmedMyWxid.isNotEmpty) {
+        senderUsernameSet.add(trimmedMyWxid);
+      }
+      final myWxid = _sanitizeUsername(rawMyWxid);
+      if (myWxid.isNotEmpty) {
+        senderUsernameSet.add(myWxid);
+      }
+      final senderUsernames = senderUsernameSet.toList();
 
       final senderDisplayNames = senderUsernames.isNotEmpty
           ? await _databaseService.getDisplayNames(senderUsernames)
           : <String, String>{};
 
-      final myWxid = _databaseService.currentAccountWxid ?? '';
-      final myContactInfo = myWxid.isNotEmpty
-          ? await _getContactInfo(myWxid)
+      final myContactInfo = rawMyWxid.isNotEmpty
+          ? await _getContactInfo(rawMyWxid)
           : <String, String>{};
+      final myDisplayName = await _buildMyDisplayName(
+        rawMyWxid,
+        myContactInfo,
+      );
 
       final html = _generateHtml(
         session,
@@ -118,6 +184,7 @@ class ChatExportService {
         myWxid,
         contactInfo,
         myContactInfo,
+        myDisplayName,
       );
 
       if (filePath == null) {
@@ -170,13 +237,17 @@ class ChatExportService {
       currentRow++;
 
       sheet.getRangeByIndex(currentRow, 1).setText('微信ID');
-      sheet.getRangeByIndex(currentRow, 2).setText(session.username);
+      sheet
+          .getRangeByIndex(currentRow, 2)
+          .setText(_sanitizeUsername(session.username));
       sheet.getRangeByIndex(currentRow, 3).setText('昵称');
       sheet
           .getRangeByIndex(currentRow, 4)
           .setText(contactInfo['nickname'] ?? '');
       sheet.getRangeByIndex(currentRow, 5).setText('备注');
-      sheet.getRangeByIndex(currentRow, 6).setText(contactInfo['remark'] ?? '');
+      sheet
+          .getRangeByIndex(currentRow, 6)
+          .setText(_getRemarkOrAlias(contactInfo));
       currentRow++;
 
       // 空行
@@ -194,13 +265,23 @@ class ChatExportService {
       currentRow++;
 
       // 获取所有发送者的显示名称
-      final senderUsernames = messages
+      final senderUsernameSet = messages
           .where(
             (m) => m.senderUsername != null && m.senderUsername!.isNotEmpty,
           )
           .map((m) => m.senderUsername!)
-          .toSet()
-          .toList();
+          .toSet();
+
+      final rawAccountWxid = _databaseService.currentAccountWxid ?? '';
+      final trimmedAccountWxid = rawAccountWxid.trim();
+      if (trimmedAccountWxid.isNotEmpty) {
+        senderUsernameSet.add(trimmedAccountWxid);
+      }
+      final currentAccountWxid = _sanitizeUsername(rawAccountWxid);
+      if (currentAccountWxid.isNotEmpty) {
+        senderUsernameSet.add(currentAccountWxid);
+      }
+      final senderUsernames = senderUsernameSet.toList();
 
       final senderDisplayNames = senderUsernames.isNotEmpty
           ? await _databaseService.getDisplayNames(senderUsernames)
@@ -212,11 +293,20 @@ class ChatExportService {
         senderContactInfos[username] = await _getContactInfo(username);
       }
 
-      // 获取当前账户的联系人信息（用于"我"发送的消息）
-      final currentAccountWxid = _databaseService.currentAccountWxid ?? '';
-      final currentAccountInfo = currentAccountWxid.isNotEmpty
-          ? await _getContactInfo(currentAccountWxid)
+      // 获取当前账户的联系人信息（用于“我”发送的消息）
+      final currentAccountInfo = rawAccountWxid.isNotEmpty
+          ? await _getContactInfo(rawAccountWxid)
           : <String, String>{};
+      final myDisplayName =
+          await _buildMyDisplayName(rawAccountWxid, currentAccountInfo);
+      final sanitizedAccountWxid = currentAccountWxid;
+      if (sanitizedAccountWxid.isNotEmpty) {
+        senderContactInfos[sanitizedAccountWxid] = currentAccountInfo;
+      }
+      final rawAccountWxidTrimmed = rawAccountWxid.trim();
+      if (rawAccountWxidTrimmed.isNotEmpty) {
+        senderContactInfos[rawAccountWxidTrimmed] = currentAccountInfo;
+      }
 
       // 添加数据行
       for (int i = 0; i < messages.length; i++) {
@@ -230,26 +320,27 @@ class ChatExportService {
 
         if (msg.isSend == 1) {
           senderRole = '我';
-          senderWxid = currentAccountWxid;
-          senderNickname =
-              _resolvePreferredName(currentAccountInfo, fallback: '我');
-          senderRemark = currentAccountInfo['remark'] ?? '';
+          senderWxid = sanitizedAccountWxid;
+          senderNickname = myDisplayName;
+          senderRemark = _getRemarkOrAlias(currentAccountInfo);
         } else if (session.isGroup && msg.senderUsername != null) {
           senderRole = senderDisplayNames[msg.senderUsername] ?? '群成员';
-          senderWxid = msg.senderUsername ?? '';
+          senderWxid = _sanitizeUsername(msg.senderUsername ?? '');
           final info = senderContactInfos[msg.senderUsername] ?? {};
           senderNickname = _resolvePreferredName(
             info,
             fallback: senderRole,
           );
-          senderRemark = info['remark'] ?? '';
+          senderRemark = _getRemarkOrAlias(info);
         } else {
           senderRole = session.displayName ?? session.username;
-          senderWxid = session.username;
+          senderWxid = _sanitizeUsername(session.username);
           senderNickname =
               _resolvePreferredName(contactInfo, fallback: senderRole);
-          senderRemark = contactInfo['remark'] ?? '';
+          senderRemark = _getRemarkOrAlias(contactInfo);
         }
+
+        senderWxid = _sanitizeUsername(senderWxid);
 
         sheet.getRangeByIndex(currentRow, 1).setNumber(i + 1);
         sheet.getRangeByIndex(currentRow, 2).setText(msg.formattedCreateTime);
@@ -312,6 +403,7 @@ class ChatExportService {
     String myWxid,
     Map<String, String> contactInfo,
     Map<String, String> myContactInfo,
+    String myDisplayName,
   ) {
     final buffer = StringBuffer();
 
@@ -331,10 +423,7 @@ class ChatExportService {
           fallback: session.displayName ?? session.username,
         );
       } else {
-        senderName = _resolvePreferredName(
-          myContactInfo,
-          fallback: '我',
-        );
+        senderName = myDisplayName;
       }
 
       return {
@@ -373,9 +462,11 @@ class ChatExportService {
 
     // 添加详细信息菜单按钮
     final nickname = contactInfo['nickname'] ?? '';
-    final remark = contactInfo['remark'] ?? '';
-    final hasDetails =
-        nickname.isNotEmpty || remark.isNotEmpty || session.username.isNotEmpty;
+    final remark = _getRemarkOrAlias(contactInfo);
+    final sanitizedSessionWxid = _sanitizeUsername(session.username);
+    final hasDetails = nickname.isNotEmpty ||
+        remark.isNotEmpty ||
+        sanitizedSessionWxid.isNotEmpty;
 
     if (hasDetails) {
       buffer.writeln(
@@ -394,11 +485,11 @@ class ChatExportService {
       // 详细信息下拉菜单
       buffer.writeln('      <div class="info-menu" id="info-menu">');
       buffer.writeln('        <div class="info-menu-content">');
-      if (session.username.isNotEmpty) {
+      if (sanitizedSessionWxid.isNotEmpty) {
         buffer.writeln('          <div class="info-item">');
         buffer.writeln('            <span class="info-label">微信ID</span>');
         buffer.writeln(
-          '            <span class="info-value">${_escapeHtml(session.username)}</span>',
+          '            <span class="info-value">${_escapeHtml(sanitizedSessionWxid)}</span>',
         );
         buffer.writeln('          </div>');
       }
@@ -641,19 +732,158 @@ class ChatExportService {
     return buffer.toString();
   }
 
+  Future<String> _buildMyDisplayName(
+    String myWxid,
+    Map<String, String> myContactInfo,
+  ) async {
+    final trimmedWxid = myWxid.trim();
+    final sanitizedWxid = _sanitizeUsername(myWxid);
+    final fallbackBase = sanitizedWxid.isNotEmpty
+        ? sanitizedWxid
+        : (trimmedWxid.isNotEmpty ? trimmedWxid : '我');
+    final preferred = _resolvePreferredName(
+      myContactInfo,
+      fallback: fallbackBase,
+    );
+
+    if (preferred != fallbackBase || sanitizedWxid.isEmpty) {
+      return preferred;
+    }
+
+    try {
+      final candidates = <String>{
+        trimmedWxid,
+        sanitizedWxid,
+      }..removeWhere((c) => c.isEmpty);
+
+      if (candidates.isEmpty) {
+        return preferred;
+      }
+
+      final names =
+          await _databaseService.getDisplayNames(candidates.toList());
+      for (final candidate in candidates) {
+        final resolved = names[candidate];
+        if (resolved != null && resolved.trim().isNotEmpty) {
+          return resolved.trim();
+        }
+      }
+    } catch (_) {}
+
+    await _logMissingDisplayName(
+      myWxid,
+      isSelf: true,
+      details: 'contact/userinfo/getDisplayNames 均未匹配到昵称/备注',
+    );
+
+    return preferred;
+  }
+
+  String _resolveSenderDisplayName({
+    required Message msg,
+    required ChatSession session,
+    required bool isSend,
+    required Map<String, String> contactInfo,
+    required Map<String, String> myContactInfo,
+    required Map<String, String> senderDisplayNames,
+    required String myDisplayName,
+  }) {
+    if (isSend) {
+      return myDisplayName;
+    }
+
+    if (session.isGroup) {
+      final groupSender = msg.senderUsername;
+      if (groupSender != null && groupSender.isNotEmpty) {
+        final display = senderDisplayNames[groupSender];
+        if (display != null && display.trim().isNotEmpty) {
+          return display;
+        }
+      }
+      return '群成员';
+    }
+
+    return _resolvePreferredName(
+      contactInfo,
+      fallback: session.displayName ?? session.username,
+    );
+  }
+
+  String _resolveSenderUsername({
+    required Message msg,
+    required ChatSession session,
+    required bool isSend,
+    required String myWxid,
+  }) {
+    String candidate = '';
+
+    if (isSend) {
+      if (myWxid.isNotEmpty) {
+        candidate = myWxid;
+      } else if (msg.senderUsername != null && msg.senderUsername!.isNotEmpty) {
+        candidate = msg.senderUsername!;
+      } else {
+        candidate = session.username;
+      }
+    } else if (session.isGroup) {
+      candidate = msg.senderUsername?.isNotEmpty == true
+          ? msg.senderUsername!
+          : session.username;
+    } else {
+      candidate = session.username;
+    }
+
+    return _sanitizeUsername(candidate);
+  }
+
+  String _sanitizeUsername(String input) {
+    final normalized = input.replaceAll(
+      RegExp(r'[\u00A0\u2000-\u200B\u202F\u205F\u3000]'),
+      ' ',
+    );
+    final trimmed = normalized.trim();
+    if (trimmed.isEmpty) return '';
+    return trimmed.replaceAll(
+      RegExp(r'[\s\u00A0\u2000-\u200B\u202F\u205F\u3000]+'),
+      '_',
+    );
+  }
+
   String _resolvePreferredName(
     Map<String, String> info, {
     required String fallback,
   }) {
-    final nickname = info['nickname'];
-    if (nickname != null && nickname.trim().isNotEmpty) {
-      return nickname.trim();
-    }
     final remark = info['remark'];
-    if (remark != null && remark.trim().isNotEmpty) {
-      return remark.trim();
+    if (_hasMeaningfulValue(remark)) {
+      return remark!;
+    }
+
+    final nickname = info['nickname'];
+    if (_hasMeaningfulValue(nickname)) {
+      return nickname!;
+    }
+
+    final alias = info['alias'];
+    if (_hasMeaningfulValue(alias)) {
+      return alias!;
     }
     return fallback;
+  }
+
+  String _getRemarkOrAlias(Map<String, String> info) {
+    final remark = info['remark'];
+    if (_hasMeaningfulValue(remark)) {
+      return remark!;
+    }
+    final nickname = info['nickname'];
+    if (_hasMeaningfulValue(nickname)) {
+      return nickname!;
+    }
+    final alias = info['alias'];
+    if (_hasMeaningfulValue(alias)) {
+      return alias!;
+    }
+    return '';
   }
 
   Future<bool> exportContactsToExcel({
@@ -689,12 +919,7 @@ class ChatExportService {
       sheet.getRangeByIndex(currentRow, 2).setText('昵称');
       sheet.getRangeByIndex(currentRow, 3).setText('微信ID');
       sheet.getRangeByIndex(currentRow, 4).setText('备注');
-      sheet.getRangeByIndex(currentRow, 5).setText('别名');
-      sheet.getRangeByIndex(currentRow, 6).setText('联系人类型');
-      sheet.getRangeByIndex(currentRow, 7).setText('识别结果');
-      sheet.getRangeByIndex(currentRow, 8).setText('是否好友');
-      sheet.getRangeByIndex(currentRow, 9).setText('数据来源');
-      sheet.getRangeByIndex(currentRow, 10).setText('是否已删除');
+      sheet.getRangeByIndex(currentRow, 5).setText('微信号');
       currentRow++;
 
       for (int i = 0; i < contactList.length; i++) {
@@ -708,13 +933,6 @@ class ChatExportService {
         sheet.getRangeByIndex(currentRow, 3).setText(contact.username);
         sheet.getRangeByIndex(currentRow, 4).setText(contact.remark);
         sheet.getRangeByIndex(currentRow, 5).setText(contact.alias);
-        sheet.getRangeByIndex(currentRow, 6).setText(contact.typeDescription);
-        sheet.getRangeByIndex(currentRow, 7).setText(record.source.label);
-        sheet.getRangeByIndex(currentRow, 8).setText(record.friendLabel);
-        sheet.getRangeByIndex(currentRow, 9).setText(record.origin.label);
-        sheet
-            .getRangeByIndex(currentRow, 10)
-            .setText(contact.isDeleted ? '是' : '否');
         currentRow++;
       }
 
@@ -723,11 +941,6 @@ class ChatExportService {
       sheet.getRangeByIndex(1, 3).columnWidth = 26;
       sheet.getRangeByIndex(1, 4).columnWidth = 22;
       sheet.getRangeByIndex(1, 5).columnWidth = 18;
-      sheet.getRangeByIndex(1, 6).columnWidth = 18;
-      sheet.getRangeByIndex(1, 7).columnWidth = 16;
-      sheet.getRangeByIndex(1, 8).columnWidth = 12;
-      sheet.getRangeByIndex(1, 9).columnWidth = 18;
-      sheet.getRangeByIndex(1, 10).columnWidth = 12;
 
       String? resolvedFilePath = filePath;
       if (resolvedFilePath == null) {
@@ -1278,48 +1491,68 @@ class ChatExportService {
     final result = <String, String>{};
 
     try {
-      // 获取 session.db 的路径
-      final sessionDbPath = _databaseService.dbPath;
-      if (sessionDbPath == null) {
+      final contactDbPath = await _databaseService.getContactDatabasePath();
+      if (contactDbPath == null) {
         return result;
       }
 
-      // 推导 contact.db 路径
-      final contactDbPath = sessionDbPath.replaceAll(
-        'session.db',
-        'contact.db',
-      );
       final contactFile = File(contactDbPath);
-
       if (!await contactFile.exists()) {
         return result;
       }
 
-      // 打开 contact.db 并查询
-      final contactDb = await databaseFactory.openDatabase(
-        contactDbPath,
-        options: OpenDatabaseOptions(readOnly: true, singleInstance: false),
-      );
+      final contactDb = await databaseFactoryFfi.openDatabase(contactDbPath);
 
       try {
-        final maps = await contactDb.query(
-          'contact',
-          columns: ['nick_name', 'remark'],
-          where: 'username = ?',
-          whereArgs: [username],
-          limit: 1,
-        );
+        final candidates = <String>{
+          username.trim(),
+          _sanitizeUsername(username),
+        }..removeWhere((c) => c.isEmpty);
 
-        if (maps.isNotEmpty) {
-          final map = maps.first;
-          final nickName = (map['nick_name'] as String?)?.trim() ?? '';
-          final remark = (map['remark'] as String?)?.trim() ?? '';
+        final tables = ['contact', 'stranger'];
 
-          if (nickName.isNotEmpty) {
-            result['nickname'] = nickName;
+        for (final table in tables) {
+          for (final candidate in candidates) {
+            final maps = await contactDb.query(
+              table,
+              columns: ['nick_name', 'remark', 'alias'],
+              where: 'username = ?',
+              whereArgs: [candidate],
+              limit: 1,
+            );
+
+            if (maps.isNotEmpty) {
+              final map = maps.first;
+              final nickName =
+                  _normalizeDisplayField(map['nick_name'] as String?);
+              final remark =
+                  _normalizeDisplayField(map['remark'] as String?);
+              final alias = _normalizeDisplayField(map['alias'] as String?);
+
+              if (_hasMeaningfulValue(remark)) {
+                result['remark'] = remark;
+              }
+
+              if (_hasMeaningfulValue(alias)) {
+                result['alias'] = alias;
+              }
+
+              if (_hasMeaningfulValue(nickName)) {
+                result['nickname'] = nickName;
+              }
+
+              if (result.isNotEmpty) {
+                return result;
+              }
+            }
           }
-          if (remark.isNotEmpty) {
-            result['remark'] = remark;
+        }
+
+        if (result.isEmpty && _isCurrentAccount(username)) {
+          final selfInfo = await _getSelfInfoFromUserInfo(contactDb);
+          if (selfInfo.isNotEmpty) {
+            result.addAll(selfInfo);
+            return result;
           }
         }
       } finally {
@@ -1329,6 +1562,139 @@ class ChatExportService {
       // 查询失败时返回空map
     }
 
+    if (result.isEmpty) {
+      final isSelf = _isCurrentAccount(username);
+      await _logMissingDisplayName(
+        username,
+        isSelf: isSelf,
+        details: isSelf
+            ? 'contact/stranger/userinfo 表无匹配记录'
+            : 'contact/stranger 表无匹配记录',
+      );
+    }
+
     return result;
+  }
+
+  bool _isCurrentAccount(String username) {
+    final myWxid = _databaseService.currentAccountWxid;
+    if (myWxid == null) return false;
+    final normalizedInput = _sanitizeUsername(username);
+    final normalizedCurrent = _sanitizeUsername(myWxid);
+    if (normalizedInput.isEmpty || normalizedCurrent.isEmpty) return false;
+    return normalizedInput == normalizedCurrent;
+  }
+
+  Future<Map<String, String>> _getSelfInfoFromUserInfo(
+    Database contactDb,
+  ) async {
+    final info = <String, String>{};
+    try {
+      final tableExists = await contactDb.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='userinfo' LIMIT 1",
+      );
+      if (tableExists.isEmpty) {
+        return info;
+      }
+
+      final rows = await contactDb.query('userinfo');
+      if (rows.isEmpty) {
+        return info;
+      }
+
+      String? nickname;
+      String? remark;
+      String? alias;
+
+      for (final row in rows) {
+        final key = _extractUserInfoKey(row);
+        final value = _extractUserInfoValue(row);
+        if (value == null || value.isEmpty) continue;
+
+        final normalizedValue = _normalizeDisplayField(value);
+        if (!_hasMeaningfulValue(normalizedValue)) continue;
+
+        final lowerKey = key?.toString().toLowerCase() ?? '';
+        if (lowerKey.contains('remark') || lowerKey.contains('displayname')) {
+          remark ??= normalizedValue;
+        } else if (lowerKey.contains('alias')) {
+          alias ??= normalizedValue;
+        } else if (lowerKey.contains('nick') ||
+            lowerKey.contains('name') ||
+            lowerKey == '2') {
+          nickname ??= normalizedValue;
+        }
+
+        if (nickname != null && (remark != null || alias != null)) {
+          break;
+        }
+      }
+
+      if (alias != null) {
+        info['alias'] = alias;
+      }
+      if (remark != null) {
+        info['remark'] = remark;
+      }
+      if (nickname != null) {
+        info['nickname'] = nickname;
+      }
+    } catch (_) {}
+
+    return info;
+  }
+
+  dynamic _extractUserInfoKey(Map<String, Object?> row) {
+    for (final key in ['id', 'type', 'item', 'key']) {
+      if (row.containsKey(key) && row[key] != null) {
+        return row[key];
+      }
+    }
+    return null;
+  }
+
+  String? _extractUserInfoValue(Map<String, Object?> row) {
+    for (final key in ['value', 'Value', 'content', 'data']) {
+      final v = row[key];
+      if (v is String && v.trim().isNotEmpty) {
+        return v.trim();
+      }
+    }
+    return null;
+  }
+
+  Future<void> _logMissingDisplayName(
+    String username, {
+    required bool isSelf,
+    required String details,
+  }) async {
+    final normalized = _sanitizeUsername(username);
+    if (normalized.isEmpty) return;
+    if (!_missingDisplayNameLog.add('$normalized|$isSelf')) {
+      return;
+    }
+
+    final baseReason = isSelf
+        ? '未在 contact/stranger/userinfo 表找到当前账号的昵称/备注，已回退为 wxid'
+        : '未在 contact/stranger 表找到联系人显示名，已回退为 wxid';
+
+    await logger.warning(
+      'ChatExportService',
+      '$baseReason: $normalized，原因: $details',
+    );
+  }
+
+  bool _hasMeaningfulValue(String? value) {
+    if (value == null) return false;
+    if (value.isEmpty) return false;
+    final stripped = value.replaceAll(RegExp(r'[ \t\r\n]'), '');
+    return stripped.isNotEmpty;
+  }
+
+  String _normalizeDisplayField(String? value) {
+    if (value == null) return '';
+    return value
+        .replaceAll(RegExp(r'^[ \t\r\n]+'), '')
+        .replaceAll(RegExp(r'[ \t\r\n]+$'), '');
   }
 }

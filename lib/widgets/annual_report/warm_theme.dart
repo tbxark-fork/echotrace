@@ -118,13 +118,13 @@ class WarmTheme {
   }) {
     return [
       BoxShadow(
-        color: (color ?? Colors.black).withOpacity(0.08),
+        color: (color ?? Colors.black).withValues(alpha: 0.08),
         blurRadius: blurRadius,
         spreadRadius: spreadRadius,
         offset: offset,
       ),
       BoxShadow(
-        color: (color ?? Colors.black).withOpacity(0.04),
+        color: (color ?? Colors.black).withValues(alpha: 0.04),
         blurRadius: blurRadius * 0.5,
         spreadRadius: spreadRadius,
         offset: Offset(offset.dx * 0.5, offset.dy * 0.5),

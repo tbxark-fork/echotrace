@@ -231,7 +231,7 @@ class _ProgressRingPainter extends CustomPainter {
 
     // 绘制背景圆环
     final backgroundPaint = Paint()
-      ..color = backgroundColor.withOpacity(0.3)
+      ..color = backgroundColor.withValues(alpha: 0.3)
       ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

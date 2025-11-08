@@ -169,13 +169,13 @@ class CalendarHeatmap extends StatelessWidget {
       case 0:
         return Colors.grey[200]!;
       case 1:
-        return baseColor.withOpacity(0.2);
+        return baseColor.withValues(alpha: 0.2);
       case 2:
-        return baseColor.withOpacity(0.4);
+        return baseColor.withValues(alpha: 0.4);
       case 3:
-        return baseColor.withOpacity(0.6);
+        return baseColor.withValues(alpha: 0.6);
       case 4:
-        return baseColor.withOpacity(0.8);
+        return baseColor.withValues(alpha: 0.8);
       case 5:
         return baseColor;
       default:

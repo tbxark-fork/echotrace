@@ -45,11 +45,11 @@ class _ChatExportPageState extends State<ChatExportPage> {
   Future<void> _loadExportFolder() async {
     final prefs = await SharedPreferences.getInstance();
     final folder = prefs.getString('export_folder');
-    if (folder != null && mounted) {
-      setState(() {
-        _exportFolder = folder;
-      });
-    }
+    if (!mounted || folder == null) return;
+
+    setState(() {
+      _exportFolder = folder;
+    });
   }
 
   Future<void> _selectExportFolder() async {
@@ -57,18 +57,22 @@ class _ChatExportPageState extends State<ChatExportPage> {
       dialogTitle: '选择导出文件夹',
     );
 
-    if (result != null && mounted) {
-      setState(() {
-        _exportFolder = result;
-      });
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('export_folder', result);
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('已设置导出文件夹: $result')));
+    if (!mounted || result == null) {
+      return;
     }
+
+    setState(() {
+      _exportFolder = result;
+    });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('export_folder', result);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('已设置导出文件夹: $result')));
   }
 
   Future<void> _exportContacts() async {
@@ -94,7 +98,11 @@ class _ChatExportPageState extends State<ChatExportPage> {
       );
 
       final friendRecords = allRecords
-          .where((record) => record.source == ContactRecognitionSource.friend)
+          .where(
+            (record) =>
+                record.source == ContactRecognitionSource.friend &&
+                record.contact.localType == 1,
+          )
           .toList();
       final groupOnlyRecords = allRecords
           .where(
@@ -251,7 +259,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
 
     final DateTimeRange? picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime(2020),
+      firstDate: DateTime(2000),
       lastDate: DateTime(2100),
       initialDateRange: _selectedRange,
       builder: (context, child) {
@@ -361,7 +369,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
             child: Row(
               children: [
                 Expanded(flex: 2, child: _buildSessionList()),
-                Container(width: 1, color: Colors.grey.withOpacity(0.2)),
+                Container(width: 1, color: Colors.grey.withValues(alpha: 0.2)),
                 Expanded(flex: 1, child: _buildExportSettings()),
               ],
             ),
@@ -377,7 +385,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1),
+          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: Row(
@@ -411,7 +419,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1),
+          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
         ),
       ),
       child: Row(
@@ -488,7 +496,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.7),
+                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -499,7 +507,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.5),
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ],
@@ -536,7 +544,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.5),
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
                 ),
               ],
@@ -555,7 +563,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               elevation: isSelected ? 2 : 0,
               color: isSelected
-                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
                   : null,
               child: ListTile(
                 leading: CircleAvatar(
@@ -762,7 +770,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: isSelected
-              ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
               : Colors.white,
           border: Border.all(
             color: isSelected
@@ -774,10 +782,13 @@ class _ChatExportPageState extends State<ChatExportPage> {
         ),
         child: Row(
           children: [
-            Radio<String>(
-              value: value,
-              groupValue: _selectedFormat,
-              onChanged: (val) => setState(() => _selectedFormat = val!),
+            Icon(
+              isSelected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+              color: isSelected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.grey.shade400,
             ),
             Expanded(
               child: Column(

@@ -125,7 +125,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                 decoration: BoxDecoration(
                   color: Theme.of(
                     context,
-                  ).colorScheme.surfaceVariant.withOpacity(0.5),
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -133,7 +133,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                     fontSize: 10,
                   ),
                 ),
@@ -209,7 +209,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(12),
                     bottomRight: Radius.circular(12),
@@ -221,7 +221,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -232,7 +232,7 @@ class _MessageBubbleState extends State<MessageBubble> {
       // 头像
       CircleAvatar(
         radius: 18,
-        backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
         child: Icon(
           Icons.person,
           size: 20,
@@ -249,7 +249,7 @@ class _MessageBubbleState extends State<MessageBubble> {
         radius: 18,
         backgroundColor: Theme.of(
           context,
-        ).colorScheme.secondary.withOpacity(0.2),
+        ).colorScheme.secondary.withValues(alpha: 0.2),
         child: Icon(
           Icons.person,
           size: 20,
@@ -290,7 +290,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.04),
+                  color: Colors.black.withValues(alpha: 0.04),
                   borderRadius: const BorderRadius.only(
                     bottomLeft: Radius.circular(12),
                     bottomRight: Radius.circular(12),
@@ -302,7 +302,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(
                       context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
+                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
               ),
@@ -315,18 +315,18 @@ class _MessageBubbleState extends State<MessageBubble> {
   /// 获取消息气泡颜色
   Color _getMessageBubbleColor(BuildContext context) {
     if (widget.message.isSystemMessage) {
-      return Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5);
+      return Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
     } else if (widget.message.isTextMessage) {
-      return Theme.of(context).colorScheme.surfaceVariant;
+      return Theme.of(context).colorScheme.surfaceContainerHighest;
     } else {
-      return Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3);
+      return Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3);
     }
   }
 
   /// 获取消息文本颜色
   Color _getMessageTextColor(BuildContext context) {
     if (widget.message.isSystemMessage) {
-      return Theme.of(context).colorScheme.onSurface.withOpacity(0.6);
+      return Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6);
     } else {
       return Theme.of(context).colorScheme.onSurface;
     }

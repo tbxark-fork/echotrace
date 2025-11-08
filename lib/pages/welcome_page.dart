@@ -37,7 +37,7 @@ class WelcomePage extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.5),
+                          ).colorScheme.onSurface.withValues(alpha: 0.5),
                           fontWeight: FontWeight.w400,
                         ),
                       ),
@@ -59,12 +59,12 @@ class WelcomePage extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Theme.of(
                     context,
-                  ).colorScheme.surfaceVariant.withOpacity(0.3),
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: Theme.of(
                       context,
-                    ).colorScheme.outline.withOpacity(0.1),
+                    ).colorScheme.outline.withValues(alpha: 0.1),
                   ),
                 ),
                 child: Row(

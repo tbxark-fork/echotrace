@@ -93,7 +93,7 @@ class _FriendCardState extends State<_FriendCard> {
             boxShadow: [
               if (widget.isSelected || _isHovered)
                 BoxShadow(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.4),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.4),
                   blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
@@ -107,8 +107,8 @@ class _FriendCardState extends State<_FriendCard> {
                 height: 48,
                 decoration: BoxDecoration(
                   color: widget.isSelected
-                      ? Colors.white.withOpacity(0.2)
-                      : Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                      ? Colors.white.withValues(alpha: 0.2)
+                      : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Icon(Icons.person, color: Colors.white, size: 28),

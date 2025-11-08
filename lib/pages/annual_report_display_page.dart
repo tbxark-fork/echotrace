@@ -40,6 +40,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   int _currentPage = 0;
   List<Widget>? _pages;
   final GlobalKey _pageViewKey = GlobalKey();
+  late final FocusNode _keyboardFocusNode;
 
   // 导出相关
   bool _isExporting = false;
@@ -58,11 +59,14 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
   @override
   void initState() {
     super.initState();
+    _keyboardFocusNode = FocusNode();
+    _keyboardFocusNode.requestFocus();
     _initializeReport();
   }
 
   @override
   void dispose() {
+    _keyboardFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -91,7 +95,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
     // 检查缓存
     await logger.info(
       'AnnualReportPage',
-      '检查缓存: year=${widget.year}, dbModifiedTime=${_dbModifiedTime}',
+      '检查缓存: year=${widget.year}, dbModifiedTime=$_dbModifiedTime',
     );
     final hasCache = await AnnualReportCacheService.hasReport(widget.year);
 
@@ -160,7 +164,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
 
     await logger.info(
       'AnnualReportPage',
-      '没有缓存或缓存无效，自动开始生成: hasCache=$hasCache, dbModifiedTime=${_dbModifiedTime}',
+      '没有缓存或缓存无效，自动开始生成: hasCache=$hasCache, dbModifiedTime=$_dbModifiedTime',
     );
     // 自动生成缓存
     await _startGenerateReport();
@@ -289,35 +293,62 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
     } catch (e, stackTrace) {
       await logger.error('AnnualReportPage', '生成报告失败: $e\n堆栈: $stackTrace');
 
-      if (mounted) {
-        setState(() {
-          _isGenerating = false;
-          _currentTaskName = '';
-          _currentTaskStatus = '';
-          _totalProgress = 0;
-        });
-
-        // 显示详细的错误信息
-        String errorMsg = '生成报告失败';
-        if (e.toString().contains('TimeoutException')) {
-          errorMsg = '生成报告超时，请稍后重试';
-        } else if (e.toString().contains('database')) {
-          errorMsg = '数据库访问失败，请检查数据库连接';
-        }
-
-        await logger.error('AnnualReportPage', '显示错误消息: $errorMsg');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$errorMsg\n\n详细信息：$e'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: '重试',
-              onPressed: _startGenerateReport,
-            ),
-          ),
-        );
+      if (!mounted) {
+        return;
       }
+
+      setState(() {
+        _isGenerating = false;
+        _currentTaskName = '';
+        _currentTaskStatus = '';
+        _totalProgress = 0;
+      });
+
+      // 显示详细的错误信息
+      String errorMsg = '生成报告失败';
+      if (e.toString().contains('TimeoutException')) {
+        errorMsg = '生成报告超时，请稍后重试';
+      } else if (e.toString().contains('database')) {
+        errorMsg = '数据库访问失败，请检查数据库连接';
+      }
+
+      await logger.error('AnnualReportPage', '显示错误消息: $errorMsg');
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$errorMsg\n\n详细信息：$e'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: '重试',
+            onPressed: _startGenerateReport,
+          ),
+        ),
+      );
     }
+  }
+
+  Widget _selectionTile<T>({
+    required T value,
+    required T groupValue,
+    required ValueChanged<T> onChanged,
+    required Widget title,
+    Widget? subtitle,
+  }) {
+    final selected = value == groupValue;
+    final colorScheme = Theme.of(context).colorScheme;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected ? colorScheme.primary : colorScheme.outline,
+      ),
+      title: title,
+      subtitle: subtitle,
+      selected: selected,
+      onTap: () => onChanged(value),
+    );
   }
 
   void _buildPages() {
@@ -428,11 +459,11 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
         ),
         child: Scaffold(
           backgroundColor: Colors.white,
-          body: RawKeyboardListener(
-            focusNode: FocusNode()..requestFocus(),
+          body: KeyboardListener(
+            focusNode: _keyboardFocusNode,
             autofocus: true,
-            onKey: (event) {
-              if (event is RawKeyDownEvent) {
+            onKeyEvent: (event) {
+              if (event is KeyDownEvent) {
                 if (event.logicalKey.keyLabel == 'Arrow Right' ||
                     event.logicalKey.keyLabel == 'Arrow Down' ||
                     event.logicalKey.keyLabel == 'Page Down') {
@@ -520,7 +551,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                         decoration: BoxDecoration(
                           color: _currentPage == index
                               ? WarmTheme.primaryGreen
-                              : Colors.grey[300]!.withOpacity(0.4),
+                              : Colors.grey[300]!.withValues(alpha: 0.4),
                           borderRadius: BorderRadius.circular(4),
                           boxShadow: _currentPage == index
                               ? WarmTheme.getSoftShadow(
@@ -969,11 +1000,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 8.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
                   final textSize = height * 0.04;
@@ -1077,8 +1107,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -1426,11 +1455,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 6.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
                   final titleSize = height * 0.05;
@@ -1609,8 +1637,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -1653,11 +1680,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 7.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
                   final titleSize = height > 700 ? 32.0 : 26.0;
@@ -1757,8 +1783,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ],
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -1782,11 +1807,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 8.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
 
@@ -1938,8 +1962,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -1978,11 +2001,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 6.5,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
 
@@ -2145,8 +2167,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -2184,11 +2205,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 6.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
                   final titleSize = height > 700 ? 36.0 : 32.0;
@@ -2282,8 +2302,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ],
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -2318,11 +2337,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 7.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
 
@@ -2491,8 +2509,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -2582,11 +2599,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 6.5,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
                   final titleSize = height > 700 ? 36.0 : 32.0;
@@ -2756,8 +2772,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ],
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -2877,11 +2892,10 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 7.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+        SafeArea(
+          child: Center(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                   final height = constraints.maxHeight;
                   final width = constraints.maxWidth;
 
@@ -3079,8 +3093,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       ),
                     ),
                   );
-                },
-              ),
+              },
             ),
           ),
         ),
@@ -3116,10 +3129,9 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
             maxSize: 8.0,
           ),
         ),
-        Container(
-          child: SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
+        SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
                 final height = constraints.maxHeight;
                 final width = constraints.maxWidth;
                 final titleSize = height > 700 ? 32.0 : 28.0;
@@ -3272,8 +3284,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                     ),
                   ],
                 );
-              },
-            ),
+            },
           ),
         ),
       ],
@@ -3300,23 +3311,23 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                RadioListTile<bool>(
-                  title: const Text('合并为一张长图'),
-                  subtitle: const Text('所有页面拼接成一张图片'),
+                _selectionTile<bool>(
                   value: false,
                   groupValue: tempSeparateImages,
                   onChanged: (value) {
-                    setState(() => tempSeparateImages = value!);
+                    setState(() => tempSeparateImages = value);
                   },
+                  title: const Text('合并为一张长图'),
+                  subtitle: const Text('所有页面拼接成一张图片'),
                 ),
-                RadioListTile<bool>(
-                  title: const Text('分开保存'),
-                  subtitle: const Text('每页单独保存为一张图片'),
+                _selectionTile<bool>(
                   value: true,
                   groupValue: tempSeparateImages,
                   onChanged: (value) {
-                    setState(() => tempSeparateImages = value!);
+                    setState(() => tempSeparateImages = value);
                   },
+                  title: const Text('分开保存'),
+                  subtitle: const Text('每页单独保存为一张图片'),
                 ),
                 const SizedBox(height: 16),
                 const Divider(),
@@ -3326,29 +3337,29 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                   style: TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                RadioListTile<String>(
-                  title: const Text('显示完整信息'),
+                _selectionTile<String>(
                   value: 'none',
                   groupValue: tempHideMode,
                   onChanged: (value) {
-                    setState(() => tempHideMode = value!);
+                    setState(() => tempHideMode = value);
                   },
+                  title: const Text('显示完整信息'),
                 ),
-                RadioListTile<String>(
-                  title: const Text('仅保留姓氏'),
+                _selectionTile<String>(
                   value: 'firstChar',
                   groupValue: tempHideMode,
                   onChanged: (value) {
-                    setState(() => tempHideMode = value!);
+                    setState(() => tempHideMode = value);
                   },
+                  title: const Text('仅保留姓氏'),
                 ),
-                RadioListTile<String>(
-                  title: const Text('完全隐藏'),
+                _selectionTile<String>(
                   value: 'full',
                   groupValue: tempHideMode,
                   onChanged: (value) {
-                    setState(() => tempHideMode = value!);
+                    setState(() => tempHideMode = value);
                   },
+                  title: const Text('完全隐藏'),
                 ),
               ],
             ),
@@ -3390,9 +3401,9 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => WillPopScope(
-          onWillPop: () async => false,
-          child: const AlertDialog(
+        builder: (context) => const PopScope(
+          canPop: false,
+          child: AlertDialog(
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -3465,7 +3476,14 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
               images.add(byteData.buffer.asUint8List());
             }
           }
-        } catch (e) {}
+        } catch (e, stackTrace) {
+          await logger.error(
+            'AnnualReportPage',
+            '页面截图失败',
+            e,
+            stackTrace,
+          );
+        }
       }
 
       // 恢复到原始页面
@@ -3614,7 +3632,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
                       filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(20),
                         ),
                       ),
@@ -3644,7 +3662,7 @@ class _AnnualReportDisplayPageState extends State<AnnualReportDisplayPage> {
               filter: ui.ImageFilter.blur(sigmaX: 15.0, sigmaY: 15.0),
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.3),
+                  color: Colors.white.withValues(alpha: 0.3),
                   borderRadius: BorderRadius.circular(20),
                 ),
               ),

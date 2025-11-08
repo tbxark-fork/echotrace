@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:crypto/crypto.dart';
@@ -31,6 +30,7 @@ class DatabaseService {
   // 当前会话库路径与账号 wxid
   static String? _sessionDbPath;
   static String? _messageDbPath;
+  String? _contactDbPath;
   String? _currentAccountWxid;
 
   // 数据库工厂（用于 Isolate 中避免全局修改）
@@ -105,6 +105,7 @@ class DatabaseService {
 
       _mode = DatabaseMode.decrypted;
       _sessionDbPath = normalizedPath;
+      _contactDbPath = null;
       _currentAccountWxid = _extractWxidFromPath(normalizedPath);
 
       await logger.info(
@@ -166,6 +167,7 @@ class DatabaseService {
 
       _mode = DatabaseMode.realtime;
       _sessionDbPath = normalizedPath;
+      _contactDbPath = null;
       _currentAccountWxid = _extractWxidFromPath(normalizedPath);
 
       await logger.info(
@@ -655,7 +657,7 @@ class DatabaseService {
                   m.*,
                   CASE WHEN m.real_sender_id = (
                     SELECT rowid FROM Name2Id WHERE user_name = ?
-                  ) THEN 1 ELSE 0 END AS is_send,
+                  ) THEN 1 ELSE 0 END AS computed_is_send,
                   n.user_name AS sender_username
                 FROM ${dbInfo.tableName} m 
                 LEFT JOIN Name2Id n ON m.real_sender_id = n.rowid
@@ -833,7 +835,7 @@ class DatabaseService {
       m.*,
       CASE WHEN m.real_sender_id = (
         SELECT rowid FROM Name2Id WHERE user_name = ?
-      ) THEN 1 ELSE 0 END AS is_send,
+      ) THEN 1 ELSE 0 END AS computed_is_send,
       n.user_name AS sender_username,
       m.real_sender_id as debug_real_sender_id,
       (SELECT rowid FROM Name2Id WHERE user_name = ?) as debug_my_rowid
@@ -1278,7 +1280,7 @@ class DatabaseService {
         return utf8.decode(value, allowMalformed: true);
       } catch (_) {
         try {
-          return latin1.decode(value, allowMalformed: true);
+          return latin1.decode(value);
         } catch (_) {}
       }
     }
@@ -1287,7 +1289,7 @@ class DatabaseService {
         return utf8.decode(value, allowMalformed: true);
       } catch (_) {
         try {
-          return latin1.decode(value, allowMalformed: true);
+          return latin1.decode(value);
         } catch (_) {}
       }
     }
@@ -1299,8 +1301,8 @@ class DatabaseService {
     final asString = value.toString().trim();
     if (asString.isEmpty) return null;
     final cleaned = asString
-        .replaceAll(RegExp(r'^["\'']+'), '')
-        .replaceAll(RegExp(r'["\'']+$'), '')
+        .replaceAll(RegExp(r'''^["']+'''), '')
+        .replaceAll(RegExp(r'''["']+$'''), '')
         .trim();
     if (cleaned.isEmpty) return null;
     if (!_isLikelyIndividualUsername(cleaned)) {
@@ -1327,13 +1329,17 @@ class DatabaseService {
     required Set<String> knownStrangers,
   }) {
     final username = contact.username.toLowerCase();
+    final normalizedUsername = _normalizeUsernameForLookup(contact.username);
 
     if (knownStrangers.contains(contact.username) ||
         knownStrangers.contains(username)) {
       return ContactRecognitionSource.stranger;
     }
 
-    if (contact.isGroup || username.contains('@chatroom')) {
+    final isChatroom =
+        username.contains('@chatroom') || contact.username.contains('@chatroom');
+
+    if (isChatroom) {
       return ContactRecognitionSource.chatroomParticipant;
     }
 
@@ -1379,7 +1385,12 @@ class DatabaseService {
       return ContactRecognitionSource.chatroomParticipant;
     }
 
-    return ContactRecognitionSource.stranger;
+    if (_currentAccountWxid != null &&
+        normalizedUsername == _normalizeUsernameForLookup(_currentAccountWxid!)) {
+      return ContactRecognitionSource.friend;
+    }
+
+    return ContactRecognitionSource.friend;
   }
 
   bool _shouldSkipContact(String username) {
@@ -1430,7 +1441,7 @@ class DatabaseService {
             m.*,
             CASE WHEN m.real_sender_id = (
               SELECT rowid FROM Name2Id WHERE user_name = ?
-            ) THEN 1 ELSE 0 END AS is_send,
+            ) THEN 1 ELSE 0 END AS computed_is_send,
             n.user_name AS sender_username
           FROM $tableName m 
           LEFT JOIN Name2Id n ON m.real_sender_id = n.rowid
@@ -2335,6 +2346,7 @@ class DatabaseService {
     await logger.info('DatabaseService', '等待文件句柄释放...');
     await Future.delayed(const Duration(milliseconds: 500));
     await logger.info('DatabaseService', '数据库连接已完全关闭');
+    _contactDbPath = null;
   }
 
   /// 检查数据库是否已连接
@@ -2352,6 +2364,19 @@ class DatabaseService {
     return _sessionDbPath!.substring(0, lastSeparator);
   }
 
+  /// 获取当前会话对应的 contact.db 路径
+  Future<String?> getContactDatabasePath() async {
+    if (_contactDbPath != null && await File(_contactDbPath!).exists()) {
+      return _contactDbPath;
+    }
+
+    final resolved = await _resolveContactDatabasePath();
+    if (resolved != null) {
+      _contactDbPath = resolved;
+    }
+    return resolved;
+  }
+
   /// 批量获取联系人显示名称（remark > nick_name > username）
   Future<Map<String, String>> getDisplayNames(List<String> usernames) async {
     if (_sessionDb == null || usernames.isEmpty) {
@@ -2359,37 +2384,81 @@ class DatabaseService {
     }
 
     try {
-      final contactDbPath = _sessionDbPath?.replaceAll(
-        'session.db',
-        'contact.db',
-      );
-      if (contactDbPath == null || !await File(contactDbPath).exists()) {
+      final contactDbPath = await getContactDatabasePath();
+      if (contactDbPath == null) {
+        await logger.warning('DatabaseService', '未找到contact数据库，无法获取显示名称');
         return {};
       }
 
-      final contactDb = await _currentFactory.openDatabase(contactDbPath);
+      final contactDb = await _currentFactory.openDatabase(
+        contactDbPath,
+        options: OpenDatabaseOptions(readOnly: true, singleInstance: false),
+      );
 
       try {
         final result = <String, String>{};
-        final placeholders = List.filled(usernames.length, '?').join(',');
+        final canonicalMap = <String, Set<String>>{};
+        for (final username in usernames) {
+          final canonical = _normalizeUsernameForLookup(username);
+          if (canonical.isEmpty) continue;
+          canonicalMap.putIfAbsent(canonical, () => <String>{});
+          canonicalMap[canonical]!.add(username);
+        }
 
-        // 1. 先从 contact 表查询
-        try {
-          var rows = await contactDb.rawQuery('''
-            SELECT username, remark, nick_name 
-            FROM contact 
+        final lookupPool = _canonicalizeUsernames(usernames);
+
+        if (lookupPool.isEmpty) {
+          return {};
+        }
+
+        void assignDisplayName(
+          String dbUsername,
+          String displayName,
+        ) {
+          result[dbUsername] = displayName;
+          final canonical = _normalizeUsernameForLookup(dbUsername);
+          if (canonical != dbUsername) {
+            result[canonical] = displayName;
+          }
+          final aliases = canonicalMap[canonical];
+          if (aliases != null) {
+            for (final alias in aliases) {
+              result[alias] = displayName;
+            }
+          }
+        }
+
+        Future<void> queryTableWithAlias(
+          String table,
+          List<String> targetUsernames,
+        ) async {
+          if (targetUsernames.isEmpty) return;
+          final placeholders =
+              List.filled(targetUsernames.length, '?').join(',');
+          final rows = await contactDb.rawQuery(
+            '''
+            SELECT username, remark, nick_name, alias 
+            FROM $table 
             WHERE username IN ($placeholders)
-          ''', usernames);
-
+          ''',
+            targetUsernames,
+          );
           for (final row in rows) {
             final username = row['username'] as String;
             final remark = row['remark'] as String?;
+            final alias = row['alias'] as String?;
             final nickName = row['nick_name'] as String?;
             final displayName = remark?.isNotEmpty == true
                 ? remark!
-                : (nickName?.isNotEmpty == true ? nickName! : username);
-            result[username] = displayName;
+                : (alias?.isNotEmpty == true
+                    ? alias!
+                    : (nickName?.isNotEmpty == true ? nickName! : username));
+            assignDisplayName(username, displayName);
           }
+        }
+
+        try {
+          await queryTableWithAlias('contact', lookupPool);
         } catch (e) {}
 
         // 2. 对于没找到的，从 stranger 表查询
@@ -2398,25 +2467,10 @@ class DatabaseService {
             .toList();
         if (notFoundUsernames.isNotEmpty) {
           try {
-            final strangerPlaceholders = List.filled(
-              notFoundUsernames.length,
-              '?',
-            ).join(',');
-            final strangerRows = await contactDb.rawQuery('''
-              SELECT username, remark, nick_name 
-              FROM stranger 
-              WHERE username IN ($strangerPlaceholders)
-            ''', notFoundUsernames);
-
-            for (final row in strangerRows) {
-              final username = row['username'] as String;
-              final remark = row['remark'] as String?;
-              final nickName = row['nick_name'] as String?;
-              final displayName = remark?.isNotEmpty == true
-                  ? remark!
-                  : (nickName?.isNotEmpty == true ? nickName! : username);
-              result[username] = displayName;
-            }
+            final strangerLookup = _canonicalizeUsernames(
+              notFoundUsernames,
+            );
+            await queryTableWithAlias('stranger', strangerLookup);
           } catch (e) {}
         }
 
@@ -2455,7 +2509,7 @@ class DatabaseService {
                   );
                 }
 
-                result[username] = displayName;
+                assignDisplayName(username, displayName);
               }
             } catch (e) {
               // 忽略单个查询错误
@@ -2472,15 +2526,16 @@ class DatabaseService {
             final Database dbForMsg = await _getDbForMessages();
             for (final username in notFoundUsernames) {
               try {
+                final searchKey = _normalizeUsernameForLookup(username);
+                if (searchKey.isEmpty) continue;
                 final rows = await dbForMsg.rawQuery(
                   'SELECT user_name FROM Name2Id WHERE user_name LIKE ? LIMIT 1',
-                  ['%$username%'],
+                  ['%$searchKey%'],
                 );
                 if (rows.isNotEmpty) {
                   final foundName = rows.first['user_name'] as String?;
                   if (foundName != null) {
-                    // 使用找到的名称（可能包含更完整的信息）
-                    result[username] = foundName;
+                    assignDisplayName(username, foundName);
                   }
                 }
               } catch (e) {
@@ -3196,6 +3251,34 @@ class DatabaseService {
     return dirName;
   }
 
+  String _normalizeUsernameForLookup(String username) {
+    final normalized = username.replaceAll(
+      RegExp(r'[\u00A0\u2000-\u200B\u202F\u205F\u3000]'),
+      ' ',
+    );
+    final trimmed = normalized.trim();
+    if (trimmed.isEmpty) return '';
+    return trimmed.replaceAll(
+      RegExp(r'[\s\u00A0\u2000-\u200B\u202F\u205F\u3000]+'),
+      '_',
+    );
+  }
+
+  List<String> _canonicalizeUsernames(List<String> usernames) {
+    final set = <String>{};
+    for (final name in usernames) {
+      final trimmed = name.trim();
+      if (trimmed.isNotEmpty) {
+        set.add(trimmed);
+      }
+      final canonical = _normalizeUsernameForLookup(name);
+      if (canonical.isNotEmpty) {
+        set.add(canonical);
+      }
+    }
+    return set.toList();
+  }
+
   String? _extractWxidFromPath(String path) {
     final parts = path.split(Platform.pathSeparator);
 
@@ -3252,6 +3335,85 @@ class DatabaseService {
       return dir;
     }
 
+    return null;
+  }
+
+  Future<String?> _resolveContactDatabasePath() async {
+    final sessionPath = _sessionDbPath;
+    if (sessionPath != null) {
+      final sessionDirPath = PathUtils.dirname(sessionPath);
+      final sessionDir = Directory(sessionDirPath);
+      if (await sessionDir.exists()) {
+        final preferredNames = ['contact.db', 'Contact.db'];
+        for (final name in preferredNames) {
+          final candidate = PathUtils.join(sessionDir.path, name);
+          if (await File(candidate).exists()) {
+            await logger.info(
+              'DatabaseService',
+              '使用会话目录中的 contact 数据库: ${PathUtils.escapeForLog(candidate)}',
+            );
+            return candidate;
+          }
+        }
+
+        File? fallback;
+        try {
+          await for (final entity in sessionDir.list(followLinks: false)) {
+            if (entity is File) {
+              final filename =
+                  PathUtils.basename(entity.path).toLowerCase();
+              if (filename == 'contact.db') {
+                final normalized =
+                    PathUtils.normalizeDatabasePath(entity.path);
+                await logger.info(
+                  'DatabaseService',
+                  '发现 contact 数据库: ${PathUtils.escapeForLog(normalized)}',
+                );
+                return normalized;
+              }
+              if (fallback == null &&
+                  filename.startsWith('contact') &&
+                  filename.endsWith('.db')) {
+                fallback = entity;
+              }
+            }
+          }
+        } catch (e) {
+          await logger.warning(
+            'DatabaseService',
+            '扫描会话目录查找 contact 数据库失败',
+            e,
+          );
+        }
+
+        if (fallback != null) {
+          final normalized = PathUtils.normalizeDatabasePath(fallback.path);
+          await logger.info(
+            'DatabaseService',
+            '使用候选 contact 数据库: ${PathUtils.escapeForLog(normalized)}',
+          );
+          return normalized;
+        }
+      }
+    }
+
+    final globalPath = await _findContactDatabase(
+      retryCount: 1,
+      retryDelayMs: 200,
+    );
+    if (globalPath != null) {
+      final normalized = PathUtils.normalizeDatabasePath(globalPath);
+      await logger.warning(
+        'DatabaseService',
+        '通过全局扫描找到 contact 数据库: ${PathUtils.escapeForLog(normalized)}',
+      );
+      return normalized;
+    }
+
+    await logger.warning(
+      'DatabaseService',
+      "无法定位 contact 数据库（当前 session: ${_sessionDbPath ?? '未知'}）",
+    );
     return null;
   }
 

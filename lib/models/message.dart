@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:zstd/zstd.dart';
@@ -201,7 +200,7 @@ class Message {
 
       case 34: // 语音消息
         final duration = _extractDurationFromXml(decodedContent, 'voicelength');
-        return duration.isNotEmpty ? '[语音 ${duration}秒]' : '[语音消息]';
+        return duration.isNotEmpty ? '[语音 $duration秒]' : '[语音消息]';
 
       case 42: // 名片消息
         final nickname = _extractValueFromXml(decodedContent, 'nickname');
@@ -209,7 +208,7 @@ class Message {
 
       case 43: // 视频消息
         final duration = _extractDurationFromXml(decodedContent, 'playlength');
-        return duration.isNotEmpty ? '[视频 ${duration}秒]' : '[视频消息]';
+        return duration.isNotEmpty ? '[视频 $duration秒]' : '[视频消息]';
 
       case 47: // 动画表情
         return '[动画表情]';
@@ -387,7 +386,7 @@ class Message {
 
     try {
       final pattern = RegExp(
-        '$attributeName["\s]*=["\s]*(\\d+)',
+        '$attributeName["\\s]*=["\\s]*(\\d+)',
         caseSensitive: false,
       );
       final match = pattern.firstMatch(xml);
@@ -428,7 +427,7 @@ class Message {
   static String? _extractImageMd5(String xml) {
     try {
       final pattern = RegExp(
-        r'md5\s*=\s*["\047]([a-fA-F0-9]+)["\047]',
+        "md5\\s*=\\s*['\"]([a-fA-F0-9]+)['\"]",
         caseSensitive: false,
       );
       final match = pattern.firstMatch(xml);

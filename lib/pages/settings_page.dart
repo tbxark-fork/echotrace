@@ -28,9 +28,9 @@ class _SettingsPageState extends State<SettingsPage> {
   final _configService = ConfigService();
   late final DecryptService _decryptService;
 
-  bool _obscureKey = true;
-  bool _obscureImageXorKey = true;
-  bool _obscureImageAesKey = true;
+  final bool _obscureKey = true;
+  final bool _obscureImageXorKey = true;
+  final bool _obscureImageAesKey = true;
   bool _isLoading = false;
   String? _statusMessage;
   bool _isSuccess = false;
@@ -209,7 +209,9 @@ class _SettingsPageState extends State<SettingsPage> {
           dbFiles.add(entity);
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      await logger.warning('SettingsPage', '扫描数据库文件失败', e);
+    }
 
     return dbFiles;
   }
@@ -400,7 +402,7 @@ class _SettingsPageState extends State<SettingsPage> {
               color: Theme.of(context).colorScheme.surface,
               border: Border(
                 bottom: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
                 ),
               ),
             ),
@@ -483,7 +485,7 @@ class _SettingsPageState extends State<SettingsPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -510,7 +512,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -698,8 +700,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 margin: const EdgeInsets.only(bottom: 24),
                 decoration: BoxDecoration(
                   color: _isSuccess
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _isSuccess ? Colors.green : Colors.red,
@@ -745,7 +747,7 @@ class _SettingsPageState extends State<SettingsPage> {
         Text(
           subtitle,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
         const SizedBox(height: 12),
@@ -760,7 +762,7 @@ class _SettingsPageState extends State<SettingsPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -787,7 +789,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -904,7 +906,7 @@ class _SettingsPageState extends State<SettingsPage> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -920,7 +922,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ?.copyWith(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
                                 fontWeight: FontWeight.w500,
                               ),
                         ),
@@ -931,7 +933,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ?.copyWith(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.5),
+                                ).colorScheme.onSurface.withValues(alpha: 0.5),
                                 height: 1.5,
                               ),
                         ),
@@ -953,7 +955,7 @@ class _SettingsPageState extends State<SettingsPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -979,7 +981,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -1027,7 +1029,7 @@ class _SettingsPageState extends State<SettingsPage> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -1040,7 +1042,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ),
@@ -1071,11 +1073,11 @@ class _SettingsPageState extends State<SettingsPage> {
           border: Border.all(
             color: isSelected
                 ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).colorScheme.outline.withOpacity(0.2),
+                : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
             width: isSelected ? 2 : 1,
           ),
           color: isSelected
-              ? Theme.of(context).colorScheme.primary.withOpacity(0.05)
+              ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.05)
               : Colors.transparent,
         ),
         child: Row(
@@ -1100,7 +1102,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -1118,7 +1120,7 @@ class _SettingsPageState extends State<SettingsPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -1144,7 +1146,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -1215,7 +1217,7 @@ class _SettingsPageState extends State<SettingsPage> {
               decoration: BoxDecoration(
                 color: Theme.of(
                   context,
-                ).colorScheme.surfaceContainerHighest.withOpacity(0.5),
+                ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -1228,7 +1230,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -1240,7 +1242,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.5),
+                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -1250,7 +1252,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(
               '清除后需要重新生成报告',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
           ],
@@ -1294,7 +1296,7 @@ class _SettingsPageState extends State<SettingsPage> {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -1320,7 +1322,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                     ],
@@ -1345,7 +1347,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(
                       context,
-                    ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                    ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Row(
@@ -1360,7 +1362,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                   ?.copyWith(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.6),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                                   ),
                             ),
                             const SizedBox(height: 4),
@@ -1377,7 +1379,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         height: 40,
                         color: Theme.of(
                           context,
-                        ).colorScheme.outline.withOpacity(0.2),
+                        ).colorScheme.outline.withValues(alpha: 0.2),
                       ),
                       Expanded(
                         child: Column(
@@ -1391,7 +1393,7 @@ class _SettingsPageState extends State<SettingsPage> {
                                     ?.copyWith(
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.onSurface.withOpacity(0.6),
+                                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                                     ),
                               ),
                             ),
@@ -1421,10 +1423,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 color: _debugMode
                     ? Theme.of(
                         context,
-                      ).colorScheme.primaryContainer.withOpacity(0.3)
+                      ).colorScheme.primaryContainer.withValues(alpha: 0.3)
                     : Theme.of(
                         context,
-                      ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
                 border: _debugMode
                     ? Border.all(
@@ -1441,7 +1443,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         ? Theme.of(context).colorScheme.primary
                         : Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -1465,7 +1467,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               ?.copyWith(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
                         ),
                       ],
@@ -1610,7 +1612,7 @@ class _SettingsPageState extends State<SettingsPage> {
             Text(
               '此操作将删除所有历史日志记录',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ),
           ],

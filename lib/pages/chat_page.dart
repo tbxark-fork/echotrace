@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/chat_session.dart';
@@ -245,6 +246,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         offset: 0,
       );
 
+      if (!mounted) {
+        return;
+      }
+
       await logger.info('ChatPage', '获取到 ${messages.length} 条消息');
 
       // 如果是群聊，批量查询所有发送者的真实姓名
@@ -266,6 +271,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           _senderDisplayNames = await appState.databaseService.getDisplayNames(
             senderUsernames,
           );
+          if (!mounted) {
+            return;
+          }
+
           await logger.info(
             'ChatPage',
             '获取到 ${_senderDisplayNames.length} 个显示名',
@@ -376,7 +385,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
       if (mounted && _selectedSession?.username == currentSessionUsername) {
         setState(() {
-          _messages = [...moreMessages.reversed.toList(), ..._messages];
+          _messages = [...moreMessages.reversed, ..._messages];
           _isLoadingMoreMessages = false;
           _currentOffset += moreMessages.length;
           _hasMoreMessages = moreMessages.length >= _loadMoreBatch;
@@ -482,7 +491,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 4,
                 offset: const Offset(2, 0),
               ),
@@ -498,7 +507,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                     bottom: BorderSide(
                       color: Theme.of(
                         context,
-                      ).colorScheme.outline.withOpacity(0.2),
+                      ).colorScheme.outline.withValues(alpha: 0.2),
                     ),
                   ),
                 ),
@@ -542,7 +551,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       bottom: BorderSide(
                         color: Theme.of(
                           context,
-                        ).colorScheme.outline.withOpacity(0.1),
+                        ).colorScheme.outline.withValues(alpha: 0.1),
                       ),
                     ),
                   ),
@@ -597,7 +606,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   ?.copyWith(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.7),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.7),
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -609,7 +618,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                   ?.copyWith(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.5),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                                   ),
                             ),
                           ],
@@ -647,7 +656,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                         color: Theme.of(context)
                                             .colorScheme
                                             .onSurface
-                                            .withOpacity(0.5),
+                                            .withValues(alpha: 0.5),
                                       ),
                                 ),
                               ],
@@ -685,7 +694,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                         color: Colors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
+                            color: Colors.black.withValues(alpha: 0.05),
                             blurRadius: 4,
                             offset: const Offset(0, 2),
                           ),
@@ -722,7 +731,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                         color: Theme.of(context)
                                             .colorScheme
                                             .onSurface
-                                            .withOpacity(0.6),
+                                            .withValues(alpha: 0.6),
                                       ),
                                 ),
                               ],
@@ -743,7 +752,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                     ?.copyWith(
                                       color: Theme.of(
                                         context,
-                                      ).colorScheme.onSurface.withOpacity(0.5),
+                                      ).colorScheme.onSurface.withValues(alpha: 0.5),
                                     ),
                               ),
                             )

@@ -137,10 +137,10 @@ class HeatmapChart extends StatelessWidget {
     // 使用微信绿色渐变
     const baseColor = Color(0xFF07C160);
 
-    if (value < 0.2) return baseColor.withOpacity(0.2);
-    if (value < 0.4) return baseColor.withOpacity(0.4);
-    if (value < 0.6) return baseColor.withOpacity(0.6);
-    if (value < 0.8) return baseColor.withOpacity(0.8);
+    if (value < 0.2) return baseColor.withValues(alpha: 0.2);
+    if (value < 0.4) return baseColor.withValues(alpha: 0.4);
+    if (value < 0.6) return baseColor.withValues(alpha: 0.6);
+    if (value < 0.8) return baseColor.withValues(alpha: 0.8);
     return baseColor;
   }
 }

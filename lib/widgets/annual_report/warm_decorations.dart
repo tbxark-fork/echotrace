@@ -55,7 +55,7 @@ class _FloatingDotsPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color.withOpacity(0.08)
+      ..color = color.withValues(alpha: 0.08)
       ..style = PaintingStyle.fill;
 
     final random = math.Random(42); // 固定种子，确保每次绘制相同
@@ -94,7 +94,7 @@ class WarmGlow extends StatelessWidget {
       decoration: BoxDecoration(
         boxShadow: [
           BoxShadow(
-            color: glowColor.withOpacity(0.2),
+            color: glowColor.withValues(alpha: 0.2),
             blurRadius: blurRadius,
             spreadRadius: spreadRadius,
           ),
@@ -128,7 +128,7 @@ class GradientOverlay extends StatelessWidget {
           gradient: LinearGradient(
             begin: begin,
             end: end,
-            colors: colors.map((c) => c.withOpacity(opacity)).toList(),
+            colors: colors.map((c) => c.withValues(alpha: opacity)).toList(),
           ),
         ),
       ),
@@ -167,13 +167,13 @@ class WarmCard extends StatelessWidget {
             shadows ??
             [
               BoxShadow(
-                color: Colors.black.withOpacity(0.06),
+                color: Colors.black.withValues(alpha: 0.06),
                 blurRadius: 20,
                 spreadRadius: 0,
                 offset: const Offset(0, 4),
               ),
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 10,
                 spreadRadius: 0,
                 offset: const Offset(0, 2),
@@ -209,7 +209,7 @@ class SoftLine extends StatelessWidget {
         gradient: LinearGradient(
           colors: [
             Colors.transparent,
-            color.withOpacity(opacity),
+            color.withValues(alpha: opacity),
             Colors.transparent,
           ],
         ),

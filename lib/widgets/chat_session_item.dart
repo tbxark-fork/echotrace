@@ -83,104 +83,106 @@ class ChatSessionItem extends StatelessWidget {
         session.username,
       );
 
-      if (context.mounted) {
-        Navigator.pop(context);
+      if (!context.mounted) {
+        return;
+      }
 
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('会话详细信息'),
-            content: SingleChildScrollView(
-              child: SizedBox(
-                width: 500,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildInfoRow('显示名称', detailInfo.displayName),
-                    _buildInfoRow('微信ID', detailInfo.wxid),
-                    if (detailInfo.remark != null)
-                      _buildInfoRow('备注', detailInfo.remark!),
-                    if (detailInfo.nickName != null)
-                      _buildInfoRow('昵称', detailInfo.nickName!),
-                    if (detailInfo.alias != null)
-                      _buildInfoRow('微信号', detailInfo.alias!),
-                    const Divider(height: 24),
-                    _buildInfoRow('消息总数', '${detailInfo.messageCount} 条'),
-                    if (detailInfo.firstMessageTime != null)
-                      _buildInfoRow(
-                        '第一条消息时间',
-                        _formatTimestamp(detailInfo.firstMessageTime!),
-                      ),
-                    if (detailInfo.latestMessageTime != null)
-                      _buildInfoRow(
-                        '最后消息时间',
-                        _formatTimestamp(detailInfo.latestMessageTime!),
-                      ),
-                    const Divider(height: 24),
-                    const Text(
-                      '消息表分布',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
+      Navigator.pop(context);
+
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('会话详细信息'),
+          content: SingleChildScrollView(
+            child: SizedBox(
+              width: 500,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInfoRow('显示名称', detailInfo.displayName),
+                  _buildInfoRow('微信ID', detailInfo.wxid),
+                  if (detailInfo.remark != null)
+                    _buildInfoRow('备注', detailInfo.remark!),
+                  if (detailInfo.nickName != null)
+                    _buildInfoRow('昵称', detailInfo.nickName!),
+                  if (detailInfo.alias != null)
+                    _buildInfoRow('微信号', detailInfo.alias!),
+                  const Divider(height: 24),
+                  _buildInfoRow('消息总数', '${detailInfo.messageCount} 条'),
+                  if (detailInfo.firstMessageTime != null)
+                    _buildInfoRow(
+                      '第一条消息时间',
+                      _formatTimestamp(detailInfo.firstMessageTime!),
                     ),
-                    const SizedBox(height: 8),
-                    if (detailInfo.messageTables.isEmpty)
-                      const Text('未找到消息表', style: TextStyle(color: Colors.grey))
-                    else
-                      ...detailInfo.messageTables.map(
-                        (table) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '• ${table.databaseName}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
+                  if (detailInfo.latestMessageTime != null)
+                    _buildInfoRow(
+                      '最后消息时间',
+                      _formatTimestamp(detailInfo.latestMessageTime!),
+                    ),
+                  const Divider(height: 24),
+                  const Text(
+                    '消息表分布',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (detailInfo.messageTables.isEmpty)
+                    const Text('未找到消息表', style: TextStyle(color: Colors.grey))
+                  else
+                    ...detailInfo.messageTables.map(
+                      (table) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '• ${table.databaseName}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
                               ),
-                              Padding(
-                                padding: const EdgeInsets.only(left: 16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '表名: ${table.tableName}',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    Text(
-                                      '消息数: ${table.messageCount} 条',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  ],
-                                ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '表名: ${table.tableName}',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  Text(
+                                    '消息数: ${table.messageCount} 条',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('关闭'),
-              ),
-            ],
           ),
-        );
-      }
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('关闭'),
+            ),
+          ],
+        ),
+      );
     } catch (e) {
-      if (context.mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('加载详细信息失败: $e')));
+      if (!context.mounted) {
+        return;
       }
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('加载详细信息失败: $e')));
     }
   }
 
@@ -264,7 +266,7 @@ class ChatSessionItem extends StatelessWidget {
               color: isSelected
                   ? Theme.of(
                       context,
-                    ).colorScheme.primaryContainer.withOpacity(0.5)
+                    ).colorScheme.primaryContainer.withValues(alpha: 0.5)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
@@ -276,7 +278,7 @@ class ChatSessionItem extends StatelessWidget {
                   radius: 24,
                   backgroundColor: Theme.of(
                     context,
-                  ).colorScheme.primary.withOpacity(0.2),
+                  ).colorScheme.primary.withValues(alpha: 0.2),
                   child: Text(
                     _cleanString(_getAvatarText(context, session)),
                     style: TextStyle(
@@ -310,7 +312,7 @@ class ChatSessionItem extends StatelessWidget {
                                 ?.copyWith(
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withOpacity(0.5),
+                                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                                 ),
                           ),
                         ],
@@ -323,7 +325,7 @@ class ChatSessionItem extends StatelessWidget {
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.7),
+                          ).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
                         maxLines: 1,
                       ),
@@ -352,11 +354,11 @@ class ChatSessionItem extends StatelessWidget {
             color: isSelected
                 ? Theme.of(
                     context,
-                  ).colorScheme.primaryContainer.withOpacity(0.5)
+                  ).colorScheme.primaryContainer.withValues(alpha: 0.5)
                 : Colors.transparent,
             border: Border(
               bottom: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
               ),
             ),
           ),
@@ -366,7 +368,7 @@ class ChatSessionItem extends StatelessWidget {
                 radius: 24,
                 backgroundColor: Theme.of(
                   context,
-                ).colorScheme.primary.withOpacity(0.2),
+                ).colorScheme.primary.withValues(alpha: 0.2),
                 child: const Icon(Icons.error),
               ),
               const SizedBox(width: 12),
@@ -383,7 +385,7 @@ class ChatSessionItem extends StatelessWidget {
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
+                        ).colorScheme.onSurface.withValues(alpha: 0.5),
                       ),
                     ),
                   ],

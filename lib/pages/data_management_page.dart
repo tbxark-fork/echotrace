@@ -26,7 +26,7 @@ class _DataManagementPageState extends State<DataManagementPage>
   late final TabController _tabController;
 
   // 数据库文件相关
-  List<DatabaseFile> _databaseFiles = [];
+  final List<DatabaseFile> _databaseFiles = [];
   bool _isLoading = false;
   String? _statusMessage;
   bool _isSuccess = false;
@@ -37,17 +37,17 @@ class _DataManagementPageState extends State<DataManagementPage>
   int _totalFiles = 0;
   int _completedFiles = 0;
   String _currentDecryptingFile = '';
-  Map<String, bool> _decryptResults = {}; // 记录每个文件的解密结果
+  final Map<String, bool> _decryptResults = {}; // 记录每个文件的解密结果
 
   // 单个文件解密进度
-  int _currentFilePages = 0;
-  int _totalFilePages = 0;
+  final int _currentFilePages = 0;
+  final int _totalFilePages = 0;
 
   // 进度节流相关
   final Map<String, DateTime> _lastProgressUpdateMap = {}; // 每个文件独立的节流时间戳
 
   // 图片文件相关
-  List<ImageFile> _imageFiles = [];
+  final List<ImageFile> _imageFiles = [];
   bool _isLoadingImages = false;
   String? _imageStatusMessage;
   bool _isImageSuccess = false;
@@ -60,7 +60,7 @@ class _DataManagementPageState extends State<DataManagementPage>
   int _totalImageFiles = 0;
   int _completedImageFiles = 0;
   String _currentDecryptingImage = '';
-  Map<String, bool> _imageDecryptResults = {}; // 记录每个图片的解密结果
+  final Map<String, bool> _imageDecryptResults = {}; // 记录每个图片的解密结果
 
   @override
   void initState() {
@@ -1786,7 +1786,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                         size: 64,
                         color: Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.3),
+                        ).colorScheme.onSurface.withValues(alpha: 0.3),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -1794,7 +1794,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.6),
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1803,7 +1803,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.4),
+                          ).colorScheme.onSurface.withValues(alpha: 0.4),
                         ),
                       ),
                     ],
@@ -1818,7 +1818,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                         padding: const EdgeInsets.all(16),
                         margin: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.blue.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: Colors.blue, width: 1),
                         ),
@@ -1910,8 +1910,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                         margin: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: _isSuccess
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.red.withOpacity(0.1),
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.red.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: _isSuccess ? Colors.green : Colors.red,
@@ -1963,7 +1963,7 @@ class _DataManagementPageState extends State<DataManagementPage>
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
         ),
       ),
       child: Padding(
@@ -1975,8 +1975,8 @@ class _DataManagementPageState extends State<DataManagementPage>
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: file.isDecrypted
-                    ? Colors.green.withOpacity(0.1)
-                    : Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -2006,7 +2006,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -2015,7 +2015,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(
                         context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                   if (file.decryptProgress > 0 && file.decryptProgress < 1)
@@ -2043,8 +2043,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                       ),
                       decoration: BoxDecoration(
                         color: file.isDecrypted
-                            ? Colors.green.withOpacity(0.1)
-                            : Colors.orange.withOpacity(0.1),
+                            ? Colors.green.withValues(alpha: 0.1)
+                            : Colors.orange.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
@@ -2066,7 +2066,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
+                          color: Colors.blue.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Row(
@@ -2131,15 +2131,15 @@ class _DataManagementPageState extends State<DataManagementPage>
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
-                Theme.of(context).colorScheme.primary.withOpacity(0.05),
-                Theme.of(context).colorScheme.primary.withOpacity(0.02),
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.02),
               ],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -2153,7 +2153,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                     decoration: BoxDecoration(
                       color: Theme.of(
                         context,
-                      ).colorScheme.primary.withOpacity(0.1),
+                      ).colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
@@ -2378,7 +2378,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                           size: 64,
                           color: Theme.of(
                             context,
-                          ).colorScheme.onSurface.withOpacity(0.3),
+                          ).colorScheme.onSurface.withValues(alpha: 0.3),
                         ),
                         const SizedBox(height: 16),
                         Text(
@@ -2387,17 +2387,17 @@ class _DataManagementPageState extends State<DataManagementPage>
                               ?.copyWith(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.onSurface.withOpacity(0.6),
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
                         ),
                         const SizedBox(height: 16),
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.blue.withOpacity(0.1),
+                            color: Colors.blue.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.blue.withOpacity(0.3),
+                              color: Colors.blue.withValues(alpha: 0.3),
                             ),
                           ),
                           child: Column(
@@ -2470,10 +2470,10 @@ class _DataManagementPageState extends State<DataManagementPage>
                             colors: [
                               Theme.of(
                                 context,
-                              ).colorScheme.primary.withOpacity(0.08),
+                              ).colorScheme.primary.withValues(alpha: 0.08),
                               Theme.of(
                                 context,
-                              ).colorScheme.primary.withOpacity(0.04),
+                              ).colorScheme.primary.withValues(alpha: 0.04),
                             ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
@@ -2482,7 +2482,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                           border: Border.all(
                             color: Theme.of(
                               context,
-                            ).colorScheme.primary.withOpacity(0.2),
+                            ).colorScheme.primary.withValues(alpha: 0.2),
                             width: 1,
                           ),
                         ),
@@ -2495,7 +2495,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                                   decoration: BoxDecoration(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.primary.withOpacity(0.15),
+                                    ).colorScheme.primary.withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: SizedBox(
@@ -2560,7 +2560,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                                 minHeight: 6,
                                 backgroundColor: Theme.of(
                                   context,
-                                ).colorScheme.primary.withOpacity(0.15),
+                                ).colorScheme.primary.withValues(alpha: 0.15),
                                 valueColor: AlwaysStoppedAnimation<Color>(
                                   Theme.of(context).colorScheme.primary,
                                 ),
@@ -2598,8 +2598,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                         margin: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           color: _isImageSuccess
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.red.withOpacity(0.1),
+                              ? Colors.green.withValues(alpha: 0.1)
+                              : Colors.red.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: _isImageSuccess ? Colors.green : Colors.red,
@@ -2690,7 +2690,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                                 _showOnlyUndecrypted = value;
                               });
                             },
-                            activeColor: Theme.of(context).colorScheme.primary,
+                            activeThumbColor:
+                                Theme.of(context).colorScheme.primary,
                           ),
                         ),
                         const SizedBox(width: 4),
@@ -2714,7 +2715,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                     decoration: BoxDecoration(
                       color: Theme.of(
                         context,
-                      ).colorScheme.primary.withOpacity(0.1),
+                      ).colorScheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
@@ -2806,7 +2807,7 @@ class _DataManagementPageState extends State<DataManagementPage>
               gradient: LinearGradient(
                 colors: [
                   Colors.orange.shade50,
-                  Colors.orange.shade50.withOpacity(0.5),
+                  Colors.orange.shade50.withValues(alpha: 0.5),
                 ],
               ),
               borderRadius: BorderRadius.circular(12),
@@ -2931,13 +2932,13 @@ class _DataManagementPageState extends State<DataManagementPage>
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: imageFile.isDecrypted
-              ? Colors.green.withOpacity(0.2)
+              ? Colors.green.withValues(alpha: 0.2)
               : Colors.grey.shade200,
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
+            color: Colors.black.withValues(alpha: 0.02),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -2961,8 +2962,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: imageFile.isDecrypted
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.grey.withOpacity(0.08),
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
@@ -2992,8 +2993,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                             ),
                             decoration: BoxDecoration(
                               color: imageFile.imageQuality == 'original'
-                                  ? Colors.blue.withOpacity(0.1)
-                                  : Colors.orange.withOpacity(0.1),
+                                  ? Colors.blue.withValues(alpha: 0.1)
+                                  : Colors.orange.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -3045,7 +3046,7 @@ class _DataManagementPageState extends State<DataManagementPage>
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(

@@ -43,16 +43,15 @@ class EchoTraceApp extends StatelessWidget {
         primary: wechatGreen,
         secondary: wechatGreen,
         surface: Colors.white,
-        background: backgroundColor,
       ),
       scaffoldBackgroundColor: backgroundColor,
       cardTheme: CardThemeData(
         elevation: 0,
         color: Colors.white,
-        shadowColor: Colors.black.withOpacity(0.05),
+        shadowColor: Colors.black.withValues(alpha: 0.05),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1),
+          side: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(

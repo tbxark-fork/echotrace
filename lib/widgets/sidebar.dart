@@ -86,7 +86,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.03),
+                color: Colors.black.withValues(alpha: 0.03),
                 blurRadius: 20,
                 offset: const Offset(0, 0),
               ),
@@ -193,7 +193,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                     size: 20,
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.6),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.6),
                                   ),
                                 ),
                               ),
@@ -207,7 +207,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                                   ?.copyWith(
                                     color: Theme.of(
                                       context,
-                                    ).colorScheme.onSurface.withOpacity(0.3),
+                                    ).colorScheme.onSurface.withValues(alpha: 0.3),
                                   ),
                             ),
                           ),
@@ -225,7 +225,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                               size: 20,
                               color: Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.6),
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
                             ),
                           ),
                         ),
@@ -277,7 +277,7 @@ class _SidebarButton extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: isSelected
-                  ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
+                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
@@ -294,7 +294,7 @@ class _SidebarButton extends StatelessWidget {
                       ? Theme.of(context).colorScheme.primary
                       : Theme.of(
                           context,
-                        ).colorScheme.onSurface.withOpacity(0.6),
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 if (showLabel) ...[
                   const SizedBox(width: 12),
@@ -307,7 +307,7 @@ class _SidebarButton extends StatelessWidget {
                             ? Theme.of(context).colorScheme.primary
                             : Theme.of(
                                 context,
-                              ).colorScheme.onSurface.withOpacity(0.7),
+                              ).colorScheme.onSurface.withValues(alpha: 0.7),
                         fontWeight: isSelected
                             ? FontWeight.w600
                             : FontWeight.normal,

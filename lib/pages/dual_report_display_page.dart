@@ -18,15 +18,19 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   late List<Widget> _pages;
+  late final FocusNode _keyboardFocusNode;
 
   @override
   void initState() {
     super.initState();
+    _keyboardFocusNode = FocusNode();
+    _keyboardFocusNode.requestFocus();
     _buildPages();
   }
 
   @override
   void dispose() {
+    _keyboardFocusNode.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -48,11 +52,11 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: RawKeyboardListener(
-        focusNode: FocusNode()..requestFocus(),
+      body: KeyboardListener(
+        focusNode: _keyboardFocusNode,
         autofocus: true,
-        onKey: (event) {
-          if (event is RawKeyDownEvent) {
+        onKeyEvent: (event) {
+          if (event is KeyDownEvent) {
             if (event.logicalKey.keyLabel == 'Arrow Right' ||
                 event.logicalKey.keyLabel == 'Arrow Down') {
               if (_currentPage < _pages.length - 1) {
@@ -183,7 +187,7 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                 delay: const Duration(milliseconds: 800),
                 style: TextStyle(
                   fontSize: 20,
-                  color: Colors.white.withOpacity(0.9),
+                  color: Colors.white.withValues(alpha: 0.9),
                 ),
               ),
               const SizedBox(height: 80),
@@ -192,7 +196,7 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                 delay: const Duration(milliseconds: 1200),
                 style: TextStyle(
                   fontSize: 14,
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha: 0.7),
                 ),
               ),
               const SizedBox(height: 10),
@@ -201,7 +205,7 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                 delay: const Duration(milliseconds: 1400),
                 style: TextStyle(
                   fontSize: 24,
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha: 0.7),
                 ),
               ),
             ],
@@ -874,10 +878,10 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                   child: Container(
                     padding: const EdgeInsets.all(32),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: Colors.white.withOpacity(0.3),
+                        color: Colors.white.withValues(alpha: 0.3),
                         width: 2,
                       ),
                     ),
@@ -899,7 +903,7 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                           '感谢你陪我走过的每一天',
                           style: TextStyle(
                             fontSize: 18,
-                            color: Colors.white.withOpacity(0.9),
+                            color: Colors.white.withValues(alpha: 0.9),
                             height: 1.6,
                           ),
                           textAlign: TextAlign.center,
@@ -914,7 +918,7 @@ class _DualReportDisplayPageState extends State<DualReportDisplayPage> {
                   delay: const Duration(milliseconds: 1200),
                   style: TextStyle(
                     fontSize: 20,
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w500,
                   ),
                 ),
