@@ -4593,6 +4593,135 @@ class DatabaseService {
       rethrow;
     }
   }
+
+
+  // 文件: lib/services/database_service.dart
+
+  /// 获取群聊的活跃时段数据（24小时分布） - [重构后版本]
+  Future<Map<int, int>> getGroupActiveHours({
+    required String chatroomId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (!isConnected) {
+      throw Exception('数据库未连接');
+    }
+
+    // 1. 初始化一个包含0-23小时，计数值都为0的Map
+    final hourlyCounts = Map<int, int>.fromEntries(
+      List.generate(24, (i) => MapEntry(i, 0)),
+    );
+
+    try {
+      final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+      final startTime = startDate.millisecondsSinceEpoch ~/ 1000;
+      final endTime = endOfDay.millisecondsSinceEpoch ~/ 1000;
+
+      // --- 使用 print 进行诊断 ---
+      print('--- [DB Service - ActiveHours] ---');
+      print('开始获取活跃时段数据...');
+      print('Chatroom ID: $chatroomId');
+      print('Start Timestamp: $startTime (${startDate.toLocal()})');
+      print('End Timestamp: $endTime (${endOfDay.toLocal()})');
+
+      // 2. 复用已经能正常工作的 getMessagesByDate 方法！
+      // 这是最关键的改动，确保我们能和“群聊排行”一样获取到数据。
+      final messages = await getMessagesByDate(
+        chatroomId,
+        startTime,
+        endTime,
+      );
+
+      // --- 关键诊断日志 ---
+      // 观察这里打印的消息数量是否大于0
+      print('getMessagesByDate 返回了 ${messages.length} 条消息');
+
+      // 3. 在 Dart 中对消息进行按小时统计
+      for (final message in messages) {
+        // 从秒级时间戳创建 DateTime 对象
+        final messageTime = DateTime.fromMillisecondsSinceEpoch(message.createTime * 1000);
+        // 获取小时 (0-23)
+        final hour = messageTime.hour;
+        // 累加计数
+        hourlyCounts[hour] = (hourlyCounts[hour] ?? 0) + 1;
+      }
+
+      // --- 打印最终结果 ---
+      print('最终聚合的小时数据: $hourlyCounts');
+      print('--- [DB Service - ActiveHours] 结束 ---');
+
+    } catch (e, stackTrace) {
+      print('获取群聊活跃时段数据时发生严重错误: $e');
+      print('堆栈跟踪: $stackTrace');
+    }
+    
+    return hourlyCounts;
+  }
+
+  /// 获取群聊的媒体类型统计数据（只统计已知类型）
+  Future<Map<int, int>> getGroupMediaTypeStats({
+    required String chatroomId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (!isConnected) {
+      throw Exception('数据库未连接');
+    }
+    
+    final typeCounts = <int, int>{};
+    // 定义已知类型的白名单集合
+    const knownTypes = {
+      1, 3, 34, 42, 43, 47, 48, 10000, 244813135921, 17179869233,
+      21474836529, 154618822705, 12884901937, 8594229559345, 81604378673,
+      266287972401, 8589934592049, 270582939697, 25769803825
+    };
+
+    try {
+      final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+      final startTime = startDate.millisecondsSinceEpoch ~/ 1000;
+      final endTime = endOfDay.millisecondsSinceEpoch ~/ 1000;
+
+      final dbInfos = await _collectTableInfosAcrossDatabases(chatroomId);
+      
+      if (dbInfos.isEmpty) {
+        return typeCounts;
+      }
+      
+      for (final dbInfo in dbInfos) {
+        try {
+          final result = await dbInfo.database.rawQuery(
+            '''
+            SELECT 
+              local_type, 
+              COUNT(*) as count 
+            FROM ${dbInfo.tableName}
+            WHERE create_time BETWEEN ? AND ?
+            GROUP BY local_type
+            ''',
+            [startTime, endTime],
+          );
+          
+          for (final row in result) {
+            final type = row['local_type'] as int?;
+            final count = row['count'] as int?;
+            
+            // --- 核心改动：只处理白名单中的已知类型 ---
+            if (type != null && count != null && knownTypes.contains(type)) {
+              typeCounts[type] = (typeCounts[type] ?? 0) + count;
+            }
+          }
+        } catch (e) {
+          // 在生产环境中，可以替换为日志记录
+          // print('[DB Service - MediaStats] 警告: 查询媒体统计时，处理表 ${dbInfo.tableName} 失败: $e');
+        }
+      } 
+    } catch (e) {
+      // 在生产环境中，可以替换为日志记录
+      // print('[DB Service - MediaStats] 严重错误: 获取媒体统计数据失败: $e');
+    }
+    
+    return typeCounts;
+  }
 }
 
 /// 消息表结构信息

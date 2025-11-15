@@ -1,3 +1,5 @@
+// 文件: lib/services/group_chat_service.dart
+
 import 'dart:core';
 import 'package:intl/intl.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -6,13 +8,14 @@ import 'database_service.dart';
 
 const Set<String> _chineseStopwords = {
   '的', '了', '我', '你', '他', '她', '它', '们', '是', '在', '也', '有', '就',
-  '不', '都', '而', '及', '与', '且', '或', '个', '这', '那', '一', '!',
-  '，', '。', '？', '、', '：', '；', '“', '”', '‘', '’', '（', '）', '《', '》',
-  '【', '】', ' ', '...', '..', '.', ',', '?', '~', '～', '！',
+  '不', '都', '而', '及', '与', '且', '或', '个', '这', '那', '一',
   '啊', '哦', '嗯', '呢', '吧', '呀', '嘛', '哈', '嘿', '哼', '哎', '唉',
   '一个', '一些', '什么', '那个', '这个', '怎么', '我们', '你们', '他们',
   '然后', '但是', '所以', '因为', '知道', '觉得', '就是', '没有', '现在',
   '不是', '可以', '这么', '那么', '还有', '如果', '的话', '可能', '出来',
+  '还是', '一样', '这样', '那样', '自己', '之后', '之前', '时候',
+  '东西', '什么样', '卧槽', '我靠', '淦',
+  // 符号类可以移除，因为我们的正则不会提取它们
 };
 
 class GroupChatInfo {
@@ -45,41 +48,72 @@ class DailyMessageCount {
 class GroupChatService {
   final DatabaseService _databaseService;
   
-  GroupChatService(this._databaseService) {
-    // 构造函数保持简单
+  GroupChatService(this._databaseService);
+
+  Future<Map<int, int>> getGroupMediaTypeStats({
+    required String chatroomId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    // --- 服务层日志 ---
+    print('--- [Service Layer - MediaStats] ---');
+    print('接收到UI层请求，准备调用 DatabaseService...');
+    print('参数: chatroomId=$chatroomId');
+    print('------------------------------------');
+    
+    return await _databaseService.getGroupMediaTypeStats(
+      chatroomId: chatroomId,
+      startDate: startDate,
+      endDate: endDate,
+    );
   }
 
-  // 将分词方法移到类级别
-  List<String> _simpleTokenize(String text) {
+  // 新增：群聊活跃时段分析
+  Future<Map<int, int>> getGroupActiveHours({
+    required String chatroomId,
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    // 直接调用底层的 DatabaseService 方法
+    return await _databaseService.getGroupActiveHours(
+      chatroomId: chatroomId,
+      startDate: startDate,
+      endDate: endDate,
+    );
+  }
+
+  // --- 新增：专门用于从中文文本中提取词语（二元组合）的方法 ---
+  List<String> _tokenizeChineseForWords(String text) {
     final words = <String>[];
-
-    // 分离中英文
+    // 正则表达式只匹配连续的汉字块
     final chinesePattern = RegExp(r'[\u4e00-\u9fa5]+');
-    final englishPattern = RegExp(r'[a-zA-Z]+');
-
-    // 提取中文词（双字组合）
-    final chineseMatches = chinesePattern.allMatches(text);
-    for (final match in chineseMatches) {
-      final chinese = match.group(0)!;
-      // 双字组合
-      for (int i = 0; i < chinese.length - 1; i++) {
-        words.add(chinese.substring(i, i + 2));
+    
+    final matches = chinesePattern.allMatches(text);
+    for (final match in matches) {
+      final segment = match.group(0)!;
+      // 只对长度大于等于2的汉字块进行处理
+      if (segment.length >= 2) {
+        // 使用滑动窗口生成二元词组 (bigrams)
+        for (int i = 0; i < segment.length - 1; i++) {
+          words.add(segment.substring(i, i + 2));
+        }
       }
+      // 忽略单个汉字
     }
-
-    // 提取英文词
-    final englishMatches = englishPattern.allMatches(text);
-    for (final match in englishMatches) {
-      final word = match.group(0)!.toLowerCase();
-      if (word.length >= 2) {
-        words.add(word);
-      }
-    }
-
     return words;
   }
+  
+  // --- 提取其他令牌（英文、数字、Emoji）的方法 ---
+  List<String> _tokenizeOthers(String text) {
+    final regex = RegExp(
+      r'([\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+)|([a-zA-Z0-9]+)',
+      unicode: true,
+    );
+    
+    return regex.allMatches(text).map((m) => m.group(0)!.toLowerCase()).toList();
+  }
 
-  // 确保方法只定义一次，并且所有路径都返回非null值
+
   Future<Map<String, int>> getMemberWordFrequency({
     required String chatroomId,
     required String memberUsername,
@@ -87,67 +121,52 @@ class GroupChatService {
     required DateTime endDate,
     int topN = 100,
   }) async {
-    print('--- [词云] 开始分析词频 for $memberUsername ---');
+    print('--- [词云] 开始分析词频 for $memberUsername (仅词语版) ---');
     final endOfDay = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
     
     try {
-      // 获取消息
       final messages = await _databaseService.getMessagesByDate(
         chatroomId,
         startDate.millisecondsSinceEpoch ~/ 1000,
         endOfDay.millisecondsSinceEpoch ~/ 1000,
       );
       
-      // 过滤并提取文本内容 - 使用displayContent而不是_parsedContent
       final textContent = messages
         .where((m) => 
             m.senderUsername == memberUsername &&
-            (m.isTextMessage || m.localType == 244813135921) && // 使用isTextMessage属性
-            m.displayContent.isNotEmpty && // 使用公开的displayContent属性
-            !m.displayContent.startsWith('[') && // 排除[不支持的消息类型]等
-            !m.displayContent.contains('tmp content') && // 排除临时内容
-            !m.displayContent.contains('thumbwidth') && // 排除图片尺寸信息
-            !m.displayContent.contains('cdnurl') && // 排除CDN链接
-            !m.displayContent.contains('<msg>') && // 排除XML内容
-            m.displayContent.length > 1 // 确保有足够内容
+            (m.isTextMessage || m.localType == 244813135921) &&
+            m.displayContent.isNotEmpty &&
+            !m.displayContent.startsWith('[') &&
+            !m.displayContent.startsWith('<?xml') &&
+            !m.displayContent.contains('<msg>')
         )
-        .map((m) => m.displayContent) // 使用displayContent
+        .map((m) => m.displayContent)
         .join(' ');
   
-      // 检查文本是否为空
       if (textContent.isEmpty) {
         print('[词云] 未找到有效文本内容');
-        return {}; // 返回空Map而不是null
+        return {};
       }
   
-      // 使用自定义分词方法
-      final List<String> segmentedWords = _simpleTokenize(textContent);
+      // --- 使用新的分词组合策略 ---
+      final List<String> chineseWords = _tokenizeChineseForWords(textContent);
+      final List<String> otherTokens = _tokenizeOthers(textContent);
       
-      // 过滤无效词
-      final filteredWords = segmentedWords.where((word) {
-        final trimmed = word.trim();
-        return trimmed.length >= 2 && 
-               !_chineseStopwords.contains(trimmed) && 
-               double.tryParse(trimmed) == null &&
-               !trimmed.contains('tmp') &&
-               !trimmed.contains('content') &&
-               !trimmed.contains('thumb') &&
-               !trimmed.contains('width');
-      }).toList();
-  
-      // 检查过滤后是否有有效词
-      if (filteredWords.isEmpty) {
-        print('[词云] 过滤后无有效词汇');
-        return {}; // 返回空Map而不是null
-      }
-  
-      // 统计词频
+      final allTokens = [...chineseWords, ...otherTokens];
+      
       final wordCounts = <String, int>{};
-      for (final word in filteredWords) {
-        wordCounts[word] = (wordCounts[word] ?? 0) + 1;
+      for (final token in allTokens) {
+        // 过滤条件：长度至少为2，且不是停用词
+        if (token.length >= 2 && !_chineseStopwords.contains(token)) {
+          wordCounts[token] = (wordCounts[token] ?? 0) + 1;
+        }
       }
   
-      // 排序并取前N个
+      if (wordCounts.isEmpty) {
+        print('[词云] 过滤后无有效词汇');
+        return {};
+      }
+  
       final sortedEntries = wordCounts.entries.toList()
         ..sort((a, b) => b.value.compareTo(a.value));
       final topEntries = sortedEntries.take(topN);
@@ -155,12 +174,13 @@ class GroupChatService {
       print('[词云] 分析完成，有效高频词数量：${topEntries.length}');
       return Map.fromEntries(topEntries);
     } catch (e) {
-      // 错误处理，确保即使出错也返回非null值
       print('[词云] 分析词频时出错: $e');
       return {};
     }
   }
 
+  // ... 其他方法 (getGroupChats, getGroupMembers, etc.) 保持不变 ...
+  // (将您之前的其他方法代码复制到这里)
   Future<List<GroupChatInfo>> getGroupChats() async {
     final sessions = await _databaseService.getSessions();
     final groupSessions = sessions.where((s) => s.isGroup).toList();
