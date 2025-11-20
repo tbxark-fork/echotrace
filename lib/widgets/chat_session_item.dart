@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/chat_session.dart';
 import '../utils/string_utils.dart';
 import '../providers/app_state.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 /// 会话列表项组件
 class ChatSessionItem extends StatelessWidget {
@@ -125,10 +126,7 @@ class ChatSessionItem extends StatelessWidget {
                   const Divider(height: 24),
                   const Text(
                     '消息表分布',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   if (detailInfo.messageTables.isEmpty)
@@ -183,8 +181,9 @@ class ChatSessionItem extends StatelessWidget {
         return;
       }
       Navigator.pop(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('加载详细信息失败: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('加载详细信息失败: $e')));
     }
   }
 
@@ -276,22 +275,57 @@ class ChatSessionItem extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 头像
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-                  backgroundImage: (avatarUrl != null && avatarUrl!.isNotEmpty)
-                      ? NetworkImage(avatarUrl!)
-                      : null,
-                  child: (avatarUrl == null || avatarUrl!.isEmpty)
-                      ? Text(
-                          _cleanString(_getAvatarText(context, session)),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                      : null,
-                ),
+                if (avatarUrl != null && avatarUrl!.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: avatarUrl!,
+                    imageBuilder: (context, imageProvider) => CircleAvatar(
+                      radius: 24,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.2),
+                      backgroundImage: imageProvider,
+                    ),
+                    placeholder: (context, url) => CircleAvatar(
+                      radius: 24,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.2),
+                      child: Text(
+                        _cleanString(_getAvatarText(context, session)),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => CircleAvatar(
+                      radius: 24,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.2),
+                      child: Text(
+                        _cleanString(_getAvatarText(context, session)),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.2),
+                    child: Text(
+                      _cleanString(_getAvatarText(context, session)),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 const SizedBox(width: 12),
 
                 // 会话信息
@@ -315,9 +349,8 @@ class ChatSessionItem extends StatelessWidget {
                             _cleanString(session.formattedLastTime),
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withValues(alpha: 0.5),
+                                  color: Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.5),
                                 ),
                           ),
                         ],
@@ -363,7 +396,9 @@ class ChatSessionItem extends StatelessWidget {
                 : Colors.transparent,
             border: Border(
               bottom: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
+                color: Theme.of(
+                  context,
+                ).colorScheme.outline.withValues(alpha: 0.1),
               ),
             ),
           ),

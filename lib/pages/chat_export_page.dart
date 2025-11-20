@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -29,7 +30,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
   String? _exportFolder;
   bool _useAllTime = false;
   bool _isExportingContacts = false;
-  
+
   // 添加静态缓存变量，用于存储会话列表
   static List<ChatSession>? _cachedSessions;
 
@@ -82,9 +83,9 @@ class _ChatExportPageState extends State<ChatExportPage> {
     final appState = context.read<AppState>();
     if (!appState.databaseService.isConnected) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先连接数据库后再导出通讯录')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('请先连接数据库后再导出通讯录')));
       }
       return;
     }
@@ -125,9 +126,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
 
       if (!mounted) return;
 
-      final summary = StringBuffer(
-        success ? '通讯录导出成功' : '没有可导出的联系人或导出被取消',
-      )
+      final summary = StringBuffer(success ? '通讯录导出成功' : '没有可导出的联系人或导出被取消')
         ..write('（好友 ')
         ..write(friendRecords.length)
         ..write(' 人');
@@ -148,16 +147,14 @@ class _ChatExportPageState extends State<ChatExportPage> {
 
       summary.write('）');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(summary.toString()),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(summary.toString())));
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出通讯录失败: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('导出通讯录失败: $e')));
       }
     } finally {
       if (mounted) {
@@ -217,6 +214,13 @@ class _ChatExportPageState extends State<ChatExportPage> {
           _isLoadingSessions = false;
         });
       }
+
+      // 异步加载头像（使用全局缓存）
+      try {
+        await appState.fetchAndCacheAvatars(
+          filteredSessions.map((s) => s.username).toList(),
+        );
+      } catch (_) {}
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -240,11 +244,11 @@ class _ChatExportPageState extends State<ChatExportPage> {
     });
     // 重新加载数据
     await _loadSessions();
-    
+
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('会话列表已刷新')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('会话列表已刷新')));
     }
   }
 
@@ -419,7 +423,10 @@ class _ChatExportPageState extends State<ChatExportPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
+          bottom: BorderSide(
+            color: Colors.grey.withValues(alpha: 0.1),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -453,7 +460,10 @@ class _ChatExportPageState extends State<ChatExportPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
+          bottom: BorderSide(
+            color: Colors.grey.withValues(alpha: 0.1),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -592,6 +602,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
           itemBuilder: (context, index) {
             final session = sessions[index];
             final isSelected = _selectedSessions.contains(session.username);
+            final avatarUrl = appState.getAvatarUrl(session.username);
 
             return Card(
               margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -600,20 +611,64 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
                   : null,
               child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.grey.shade300,
-                  child: Text(
-                    StringUtils.getFirstChar(
-                      session.displayName ?? session.username,
-                    ),
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.grey.shade700,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                leading: (avatarUrl != null && avatarUrl.isNotEmpty)
+                    ? CachedNetworkImage(
+                        imageUrl: avatarUrl,
+                        imageBuilder: (context, imageProvider) => CircleAvatar(
+                          backgroundColor: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade300,
+                          backgroundImage: imageProvider,
+                        ),
+                        placeholder: (context, url) => CircleAvatar(
+                          backgroundColor: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade300,
+                          child: Text(
+                            StringUtils.getFirstChar(
+                              session.displayName ?? session.username,
+                            ),
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.grey.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => CircleAvatar(
+                          backgroundColor: isSelected
+                              ? Theme.of(context).colorScheme.primary
+                              : Colors.grey.shade300,
+                          child: Text(
+                            StringUtils.getFirstChar(
+                              session.displayName ?? session.username,
+                            ),
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.grey.shade700,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      )
+                    : CircleAvatar(
+                        backgroundColor: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.grey.shade300,
+                        child: Text(
+                          StringUtils.getFirstChar(
+                            session.displayName ?? session.username,
+                          ),
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.grey.shade700,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                 title: Text(
                   session.displayName ?? session.username,
                   style: TextStyle(
@@ -684,8 +739,8 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   Text(
                     '通讯录导出',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(

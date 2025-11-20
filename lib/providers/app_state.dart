@@ -4,6 +4,8 @@ import 'package:path_provider/path_provider.dart';
 import '../services/database_service.dart';
 import '../services/config_service.dart';
 import '../services/logger_service.dart';
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 应用状态管理
 class AppState extends ChangeNotifier {
@@ -20,6 +22,9 @@ class AppState extends ChangeNotifier {
   String _decryptingDatabase = '';
   int _decryptProgress = 0;
   int _decryptTotal = 0;
+
+  // 全局头像缓存 (username -> avatarUrl)
+  Map<String, String> _globalAvatarCache = {};
 
   bool get isConfigured => _isConfigured;
   String get currentPage => _currentPage;
@@ -50,6 +55,9 @@ class AppState extends ChangeNotifier {
       // 初始化日志服务
       await logger.initialize();
       await logger.info('AppState', '应用开始初始化');
+
+      // 加载本地缓存的头像
+      await _loadCachedAvatars();
 
       // 初始化数据库服务
       await databaseService.initialize();
@@ -424,6 +432,80 @@ class AppState extends ChangeNotifier {
     } catch (e, stackTrace) {
       await logger.error('AppState', '连接解密备份数据库失败', e, stackTrace);
       rethrow;
+    }
+  }
+
+  // --- 头像缓存相关方法 ---
+
+  /// 加载本地缓存的头像
+  Future<void> _loadCachedAvatars() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = prefs.getString('avatar_cache');
+      if (jsonStr != null) {
+        final Map<String, dynamic> decoded = jsonDecode(jsonStr);
+        _globalAvatarCache = decoded.map(
+          (key, value) => MapEntry(key, value.toString()),
+        );
+        await logger.info('AppState', '已加载 ${_globalAvatarCache.length} 个缓存头像');
+      }
+    } catch (e) {
+      await logger.warning('AppState', '加载头像缓存失败', e);
+    }
+  }
+
+  /// 获取指定用户的头像URL
+  String? getAvatarUrl(String username) {
+    return _globalAvatarCache[username];
+  }
+
+  /// 批量获取并更新头像缓存
+  /// 如果数据库中的URL与缓存不一致，则更新缓存并持久化
+  Future<void> fetchAndCacheAvatars(List<String> usernames) async {
+    if (!databaseService.isConnected || usernames.isEmpty) return;
+
+    try {
+      // 过滤掉不需要查询的系统账号（可选，视需求而定）
+      // final targets = usernames.where((u) => !u.startsWith('gh_')).toList();
+
+      // 从数据库获取最新头像URL
+      final latestAvatars = await databaseService.getAvatarUrls(usernames);
+
+      bool hasChanges = false;
+
+      for (final entry in latestAvatars.entries) {
+        final username = entry.key;
+        final newUrl = entry.value;
+
+        // 如果缓存中没有，或者URL变了，则更新
+        if (_globalAvatarCache[username] != newUrl) {
+          _globalAvatarCache[username] = newUrl;
+          hasChanges = true;
+        }
+      }
+
+      // 如果有变化，保存到本地并通知监听器
+      if (hasChanges) {
+        await _saveAvatarCache();
+        notifyListeners();
+        await logger.debug(
+          'AppState',
+          '更新了头像缓存，当前缓存总数: ${_globalAvatarCache.length}',
+        );
+      }
+    } catch (e) {
+      await logger.warning('AppState', '更新头像缓存失败', e);
+    }
+  }
+
+  /// 保存头像缓存到本地
+  Future<void> _saveAvatarCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonStr = jsonEncode(_globalAvatarCache);
+      await prefs.setString('avatar_cache', jsonStr);
+    } catch (e) {
+      await logger.warning('AppState', '保存头像缓存失败', e);
     }
   }
 }

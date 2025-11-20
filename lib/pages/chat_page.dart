@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
@@ -20,19 +21,16 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
-  static const int _initialMessageBatch = 90;
-  static const int _loadMoreBatch = 210;
-  static const double _loadTriggerDistance = 160.0;
-  static const double _prefetchTriggerDistance = 560.0;
+  static const int _initialMessageBatch = 30; // 减少初始加载数量以提升速度
+  static const int _loadMoreBatch = 50; // 分批加载更多
+  static const double _loadTriggerDistance = 200.0;
+  static const double _prefetchTriggerDistance = 500.0;
 
   ChatSession? _selectedSession;
   List<ChatSession> _sessions = [];
   List<ChatSession> _filteredSessions = []; // 搜索过滤后的会话列表
   List<Message> _messages = [];
-  // 会话头像缓存（username -> avatarUrl）
-  Map<String, String> _sessionAvatarUrls = {};
-  // 群聊成员头像缓存（username -> avatarUrl）
-  Map<String, String> _senderAvatarUrls = {};
+
   String? _myAvatarUrl; // 我的头像
   bool _isLoadingSessions = false;
   bool _isLoadingMessages = false;
@@ -111,10 +109,13 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       final appState = context.read<AppState>();
       final myWxid = appState.databaseService.currentAccountWxid;
       if (myWxid == null || myWxid.isEmpty) return;
-      final map = await appState.databaseService.getAvatarUrls([myWxid]);
+
+      // 使用全局缓存更新我的头像
+      await appState.fetchAndCacheAvatars([myWxid]);
+
       if (!mounted) return;
       setState(() {
-        _myAvatarUrl = map[myWxid];
+        _myAvatarUrl = appState.getAvatarUrl(myWxid);
       });
     } catch (_) {}
   }
@@ -222,16 +223,12 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         await _loadMyAvatar();
       }
 
-      // 异步加载头像（不阻塞会话渲染）
+      // 异步加载头像（使用全局缓存）
       try {
-        final avatarMap = await appState.databaseService.getAvatarUrls(
+        final appState = context.read<AppState>();
+        await appState.fetchAndCacheAvatars(
           filteredSessions.map((s) => s.username).toList(),
         );
-        if (mounted) {
-          setState(() {
-            _sessionAvatarUrls = avatarMap;
-          });
-        }
       } catch (_) {}
     } catch (e, stackTrace) {
       await logger.error('ChatPage', '加载会话列表失败', e, stackTrace);
@@ -274,7 +271,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
       final appState = context.read<AppState>();
       // 若我的头像尚未就绪，尝试补载
       if (_myAvatarUrl == null || _myAvatarUrl!.isEmpty) {
-        await _loadMyAvatar();
+        _loadMyAvatar(); // 不等待，并行加载
       }
       await logger.info(
         'ChatPage',
@@ -292,83 +289,50 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
       await logger.info('ChatPage', '获取到 ${messages.length} 条消息');
 
-      // 如果是群聊，批量查询所有发送者的真实姓名
-      if (session.isGroup && messages.isNotEmpty) {
-        await logger.info('ChatPage', '这是群聊，开始查询发送者显示名');
-        final senderUsernames = messages
-            .where(
-              (m) => m.senderUsername != null && m.senderUsername!.isNotEmpty,
-            )
-            .map((m) => m.senderUsername!)
-            .toSet()
-            .toList();
+      // 1. 先渲染消息，让用户立刻看到内容（渐进式渲染）
+      setState(() {
+        _messages = messages.reversed.toList(); // 反转顺序，最新消息在下方
+        _isLoadingMessages = false;
+        _currentOffset = messages.length;
+        _hasMoreMessages = messages.length >= _initialMessageBatch;
+      });
 
-        if (senderUsernames.isNotEmpty) {
-          await logger.info(
-            'ChatPage',
-            '查询 ${senderUsernames.length} 个发送者的显示名',
-          );
-          _senderDisplayNames = await appState.databaseService.getDisplayNames(
-            senderUsernames,
-          );
-          // 同时查询头像
+      // 自动滚动到底部（最新消息）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            _scrollController.hasClients &&
+            _selectedSession?.username == session.username) {
           try {
-            _senderAvatarUrls = await appState.databaseService.getAvatarUrls(
-              senderUsernames,
+            _scrollController.jumpTo(
+              _scrollController.position.maxScrollExtent,
             );
-          } catch (_) {}
-          if (!mounted) {
-            return;
+          } catch (e) {
+            // 忽略滚动错误
           }
-
-          await logger.info(
-            'ChatPage',
-            '获取到 ${_senderDisplayNames.length} 个显示名',
-          );
         }
+      });
+
+      // 2. 如果是群聊，后台加载发送者显示名和头像
+      if (session.isGroup && messages.isNotEmpty) {
+        // 不await，让它在后台运行
+        _loadGroupMemberInfo(session, messages);
       }
 
-      if (mounted) {
-        setState(() {
-          _messages = messages.reversed.toList(); // 反转顺序，最新消息在下方
-          _isLoadingMessages = false;
-          _currentOffset = messages.length;
-          _hasMoreMessages = messages.length >= _initialMessageBatch;
-        });
-
-        // 自动滚动到底部（最新消息）
-        WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 如果消息数量接近初始加载限制，延迟自动加载更多消息，提升用户体验
+      if (messages.length >= _initialMessageBatch - 10) {
+        // 记录初次加载时间，用于避免与用户滚动触发的加载冲突
+        _lastInitialLoadTime = DateTime.now();
+        Future.delayed(const Duration(milliseconds: 300), () {
+          // 检查是否是初次加载后不久（避免与用户滚动触发的加载冲突）
           if (mounted &&
-              _scrollController.hasClients &&
-              _selectedSession?.username == session.username) {
-            try {
-              _scrollController.jumpTo(
-                _scrollController.position.maxScrollExtent,
-              );
-            } catch (e) {
-              // 忽略滚动错误
-            }
+              _selectedSession?.username == session.username &&
+              !_isLoadingMoreMessages &&
+              _lastInitialLoadTime != null &&
+              DateTime.now().difference(_lastInitialLoadTime!).inMilliseconds <
+                  1000) {
+            _loadMoreMessages();
           }
         });
-
-        // 如果消息数量接近初始加载限制，延迟自动加载更多消息，提升用户体验
-        if (messages.length >= _initialMessageBatch - 10) {
-          // 记录初次加载时间，用于避免与用户滚动触发的加载冲突
-          _lastInitialLoadTime = DateTime.now();
-          Future.delayed(const Duration(milliseconds: 300), () {
-            // 检查是否是初次加载后不久（避免与用户滚动触发的加载冲突）
-            if (mounted &&
-                _selectedSession?.username == session.username &&
-                !_isLoadingMoreMessages &&
-                _lastInitialLoadTime != null &&
-                DateTime.now()
-                        .difference(_lastInitialLoadTime!)
-                        .inMilliseconds <
-                    1000) {
-              _loadMoreMessages();
-            }
-          });
-        }
       }
     } catch (e) {
       if (mounted) {
@@ -379,6 +343,46 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
           context,
         ).showSnackBar(SnackBar(content: Text('加载消息失败: $e')));
       }
+    }
+  }
+
+  // 新增：专门加载群成员信息的方法
+  Future<void> _loadGroupMemberInfo(
+    ChatSession session,
+    List<Message> messages,
+  ) async {
+    try {
+      final appState = context.read<AppState>();
+      await logger.info('ChatPage', '这是群聊，开始后台查询发送者显示名');
+      final senderUsernames = messages
+          .where(
+            (m) => m.senderUsername != null && m.senderUsername!.isNotEmpty,
+          )
+          .map((m) => m.senderUsername!)
+          .toSet()
+          .toList();
+
+      if (senderUsernames.isNotEmpty) {
+        await logger.info('ChatPage', '查询 ${senderUsernames.length} 个发送者的显示名');
+        final names = await appState.databaseService.getDisplayNames(
+          senderUsernames,
+        );
+
+        if (!mounted || _selectedSession?.username != session.username) return;
+
+        setState(() {
+          _senderDisplayNames.addAll(names);
+        });
+
+        // 同时查询头像（使用全局缓存）
+        try {
+          await appState.fetchAndCacheAvatars(senderUsernames);
+        } catch (_) {}
+
+        await logger.info('ChatPage', '获取到 ${names.length} 个显示名');
+      }
+    } catch (e) {
+      logger.error('ChatPage', '加载群成员信息失败', e);
     }
   }
 
@@ -528,6 +532,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
     return Row(
       children: [
         // 左侧会话列表
@@ -650,9 +655,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               '数据库未连接',
                               style: Theme.of(context).textTheme.titleMedium
                                   ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.7),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.7),
                                     fontWeight: FontWeight.bold,
                                   ),
                             ),
@@ -662,9 +668,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                               textAlign: TextAlign.center,
                               style: Theme.of(context).textTheme.bodyMedium
                                   ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.5),
                                   ),
                             ),
                           ],
@@ -718,7 +725,9 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                     _selectedSession?.username ==
                                     session.username,
                                 onTap: () => _loadMessages(session),
-                                avatarUrl: _sessionAvatarUrls[session.username],
+                                avatarUrl: appState.getAvatarUrl(
+                                  session.username,
+                                ),
                               );
                             },
                           );
@@ -749,27 +758,7 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                       ),
                       child: Row(
                         children: [
-                          CircleAvatar(
-                            backgroundColor: Theme.of(context).colorScheme.primary,
-                            backgroundImage: (_selectedSession != null &&
-                                    _sessionAvatarUrls[_selectedSession!.username] != null &&
-                                    _sessionAvatarUrls[_selectedSession!.username]!.isNotEmpty)
-                                ? NetworkImage(
-                                    _sessionAvatarUrls[_selectedSession!.username]!,
-                                  )
-                                : null,
-                            child: (_selectedSession == null ||
-                                    _sessionAvatarUrls[_selectedSession!.username] == null ||
-                                    _sessionAvatarUrls[_selectedSession!.username]!.isEmpty)
-                                ? Text(
-                                    StringUtils.getFirstChar(
-                                      _selectedSession!.displayName ??
-                                          _selectedSession!.username,
-                                    ),
-                                    style: const TextStyle(color: Colors.white),
-                                  )
-                                : null,
-                          ),
+                          _buildSelectedSessionAvatar(context, appState),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
@@ -806,9 +795,10 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
                                 '暂无消息',
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurface.withValues(alpha: 0.5),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.5),
                                     ),
                               ),
                             )
@@ -854,11 +844,16 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
 
                                 // 选择头像：
                                 // 私聊：使用会话头像；群聊：使用发送者头像
-                                final avatarUrl = _selectedSession?.isGroup == true
+                                final avatarUrl =
+                                    _selectedSession?.isGroup == true
                                     ? (message.senderUsername != null
-                                        ? _senderAvatarUrls[message.senderUsername!]
-                                        : null)
-                                    : _sessionAvatarUrls[_selectedSession!.username];
+                                          ? appState.getAvatarUrl(
+                                              message.senderUsername!,
+                                            )
+                                          : null)
+                                    : appState.getAvatarUrl(
+                                        _selectedSession!.username,
+                                      );
 
                                 return MessageBubble(
                                   message: message,
@@ -879,5 +874,49 @@ class _ChatPageState extends State<ChatPage> with TickerProviderStateMixin {
         ),
       ],
     );
+  }
+
+  Widget _buildSelectedSessionAvatar(BuildContext context, AppState appState) {
+    final avatarUrl = _selectedSession != null
+        ? appState.getAvatarUrl(_selectedSession!.username)
+        : null;
+
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
+      return CachedNetworkImage(
+        imageUrl: avatarUrl,
+        imageBuilder: (context, imageProvider) => CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          backgroundImage: imageProvider,
+        ),
+        placeholder: (context, url) => CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          child: Text(
+            StringUtils.getFirstChar(
+              _selectedSession!.displayName ?? _selectedSession!.username,
+            ),
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        errorWidget: (context, url, error) => CircleAvatar(
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          child: Text(
+            StringUtils.getFirstChar(
+              _selectedSession!.displayName ?? _selectedSession!.username,
+            ),
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+      );
+    } else {
+      return CircleAvatar(
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: Text(
+          StringUtils.getFirstChar(
+            _selectedSession!.displayName ?? _selectedSession!.username,
+          ),
+          style: const TextStyle(color: Colors.white),
+        ),
+      );
+    }
   }
 }

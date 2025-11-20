@@ -83,162 +83,182 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
         return Container(
           width: _widthAnimation.value,
           decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 20,
-                offset: const Offset(0, 0),
+            color: Theme.of(context).colorScheme.surface,
+            border: Border(
+              right: BorderSide(
+                color: Theme.of(context).dividerTheme.color!,
+                width: 1,
               ),
-            ],
+            ),
           ),
           child: Column(
             children: [
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
               // 标题（顶部，仅展开时显示）
               if (_showContent) ...[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
                     'EchoTrace',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      fontSize: 22,
-                      color: Colors.black87,
                       letterSpacing: -0.5,
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 40),
               ] else ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                // 收起时显示首字母
+                Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'E',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
               ],
 
-              const Spacer(),
-
               // 导航按钮
-              Consumer<AppState>(
-                builder: (context, appState, child) {
-                  return Column(
-                    children: [
-                      _SidebarButton(
-                        icon: Icons.chat_bubble_outline,
-                        label: '聊天记录',
-                        showLabel: _showContent,
-                        isSelected: appState.currentPage == 'chat',
-                        onTap: () => appState.setCurrentPage('chat'),
-                      ),
-
-                      _SidebarButton(
-                        icon: Icons.analytics_outlined,
-                        label: '数据分析',
-                        showLabel: _showContent,
-                        isSelected: appState.currentPage == 'analytics',
-                        onTap: () => appState.setCurrentPage('analytics'),
-                      ),
-                      _SidebarButton(
-                        icon: Icons.groups_outlined,
-                        label: '群聊分析',
-                        showLabel: _showContent,
-                        isSelected:
-                            appState.currentPage == 'group_chat_analysis',
-                        onTap: () =>
-                            appState.setCurrentPage('group_chat_analysis'),
-                      ),
-
-                      _SidebarButton(
-                        icon: Icons.file_download_outlined,
-                        label: '导出记录',
-                        showLabel: _showContent,
-                        isSelected: appState.currentPage == 'export',
-                        onTap: () => appState.setCurrentPage('export'),
-                      ),
-
-                      _SidebarButton(
-                        icon: Icons.folder_outlined,
-                        label: '数据管理',
-                        showLabel: _showContent,
-                        isSelected: appState.currentPage == 'data_management',
-                        onTap: () => appState.setCurrentPage('data_management'),
-                      ),
-
-                      _SidebarButton(
-                        icon: Icons.settings_outlined,
-                        label: '设置',
-                        showLabel: _showContent,
-                        isSelected: appState.currentPage == 'settings',
-                        onTap: () => appState.setCurrentPage('settings'),
-                      ),
-                    ],
-                  );
-                },
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Consumer<AppState>(
+                    builder: (context, appState, child) {
+                      return Column(
+                        children: [
+                          _SidebarButton(
+                            icon: Icons.chat_bubble_outline,
+                            label: '聊天记录',
+                            showLabel: _showContent,
+                            isSelected: appState.currentPage == 'chat',
+                            onTap: () => appState.setCurrentPage('chat'),
+                          ),
+                          _SidebarButton(
+                            icon: Icons.analytics_outlined,
+                            label: '数据分析',
+                            showLabel: _showContent,
+                            isSelected: appState.currentPage == 'analytics',
+                            onTap: () => appState.setCurrentPage('analytics'),
+                          ),
+                          _SidebarButton(
+                            icon: Icons.groups_outlined,
+                            label: '群聊分析',
+                            showLabel: _showContent,
+                            isSelected:
+                                appState.currentPage == 'group_chat_analysis',
+                            onTap: () =>
+                                appState.setCurrentPage('group_chat_analysis'),
+                          ),
+                          _SidebarButton(
+                            icon: Icons.file_download_outlined,
+                            label: '导出记录',
+                            showLabel: _showContent,
+                            isSelected: appState.currentPage == 'export',
+                            onTap: () => appState.setCurrentPage('export'),
+                          ),
+                          _SidebarButton(
+                            icon: Icons.folder_outlined,
+                            label: '数据管理',
+                            showLabel: _showContent,
+                            isSelected:
+                                appState.currentPage == 'data_management',
+                            onTap: () =>
+                                appState.setCurrentPage('data_management'),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
 
-              const SizedBox(height: 24),
+              // 设置按钮（固定在底部）
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Consumer<AppState>(
+                  builder: (context, appState, child) {
+                    return _SidebarButton(
+                      icon: Icons.settings_outlined,
+                      label: '设置',
+                      showLabel: _showContent,
+                      isSelected: appState.currentPage == 'settings',
+                      onTap: () => appState.setCurrentPage('settings'),
+                    );
+                  },
+                ),
+              ),
 
               // 版本信息和折叠按钮
               Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: _isCollapsed ? 16 : 12,
-                  vertical: 16,
+                  horizontal: _showContent ? 24 : 12,
+                  vertical: 24,
                 ),
-                child: _showContent
-                    ? Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          // 折叠按钮在左侧
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: _toggleSidebar,
-                                borderRadius: BorderRadius.circular(8),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  child: Icon(
-                                    Icons.chevron_left,
-                                    size: 20,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.6),
-                                  ),
-                                ),
+                child: Row(
+                  mainAxisAlignment: _showContent
+                      ? MainAxisAlignment.spaceBetween
+                      : MainAxisAlignment.center,
+                  children: [
+                    if (_showContent)
+                      Expanded(
+                        child: Text(
+                          _version,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.4),
                               ),
+                        ),
+                      ),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: _toggleSidebar,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerLow,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context).dividerTheme.color!,
                             ),
                           ),
-                          // 版本号居中
-                          Center(
-                            child: Text(
-                              _version,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withValues(alpha: 0.3),
-                                  ),
-                            ),
-                          ),
-                        ],
-                      )
-                    : Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _toggleSidebar,
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            child: Icon(
-                              Icons.chevron_right,
-                              size: 20,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.6),
-                            ),
+                          child: Icon(
+                            _isCollapsed
+                                ? Icons.chevron_right
+                                : Icons.chevron_left,
+                            size: 16,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.6),
                           ),
                         ),
                       ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -266,44 +286,39 @@ class _SidebarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: !showLabel ? label : '',
-      preferBelow: false,
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: showLabel ? 16 : 12,
+        vertical: 4,
+      ),
       child: Material(
-        color: Colors.transparent,
+        color: isSelected
+            ? colorScheme.primary.withValues(alpha: 0.08)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,
           borderRadius: BorderRadius.circular(12),
+          hoverColor: colorScheme.primary.withValues(alpha: 0.04),
           child: Container(
             width: double.infinity,
             padding: EdgeInsets.symmetric(
-              horizontal: showLabel ? 16 : 8,
-              vertical: 14,
-            ),
-            margin: EdgeInsets.symmetric(
-              horizontal: showLabel ? 12 : 8,
-              vertical: 6,
-            ),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.1)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(12),
+              horizontal: showLabel ? 16 : 0,
+              vertical: 12,
             ),
             child: Row(
               mainAxisAlignment: showLabel
                   ? MainAxisAlignment.start
                   : MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
                   icon,
                   size: 22,
                   color: isSelected
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ? colorScheme.primary
+                      : colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 if (showLabel) ...[
                   const SizedBox(width: 12),
@@ -313,10 +328,8 @@ class _SidebarButton extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: isSelected
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(
-                                context,
-                              ).colorScheme.onSurface.withValues(alpha: 0.7),
+                            ? colorScheme.primary
+                            : colorScheme.onSurface.withValues(alpha: 0.8),
                         fontWeight: isSelected
                             ? FontWeight.w600
                             : FontWeight.normal,

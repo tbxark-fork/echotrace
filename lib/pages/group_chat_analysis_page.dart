@@ -1,6 +1,7 @@
 // 文件: group_chat_analysis_page.dart
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../services/group_chat_service.dart';
@@ -282,10 +283,9 @@ class _GroupChatAnalysisPageState extends State<GroupChatAnalysisPage>
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(12),
                 color: isSelected
-                    ? Theme.of(context)
-                        .colorScheme
-                        .primaryContainer
-                        .withValues(alpha: 0.5)
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer.withValues(alpha: 0.5)
                     : Colors.transparent,
               ),
               child: Row(
@@ -301,9 +301,7 @@ class _GroupChatAnalysisPageState extends State<GroupChatAnalysisPage>
                             group.displayName,
                             '未命名群聊',
                           ),
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
+                          style: Theme.of(context).textTheme.bodyMedium
                               ?.copyWith(fontWeight: FontWeight.w600),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -311,11 +309,11 @@ class _GroupChatAnalysisPageState extends State<GroupChatAnalysisPage>
                         const SizedBox(height: 4),
                         Text(
                           '${group.memberCount} 位成员',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.6),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
                         ),
                       ],
@@ -539,7 +537,6 @@ class _GroupChatAnalysisPageState extends State<GroupChatAnalysisPage>
     );
   }
 
-
   Widget _buildGroupAvatar(
     BuildContext context,
     GroupChatInfo group, {
@@ -550,23 +547,61 @@ class _GroupChatAnalysisPageState extends State<GroupChatAnalysisPage>
       group.displayName,
       defaultChar: '群',
     );
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: Theme.of(context)
-          .colorScheme
-          .primary
-          .withValues(alpha: hasAvatar ? 0.05 : 0.15),
-      backgroundImage: hasAvatar ? NetworkImage(group.avatarUrl!) : null,
-      child: hasAvatar
-          ? null
-          : Text(
-              fallbackText,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
-                fontSize: radius / 1.6,
-              ),
+
+    if (hasAvatar) {
+      return CachedNetworkImage(
+        imageUrl: group.avatarUrl!,
+        imageBuilder: (context, imageProvider) => CircleAvatar(
+          radius: radius,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primary.withValues(alpha: 0.05),
+          backgroundImage: imageProvider,
+        ),
+        placeholder: (context, url) => CircleAvatar(
+          radius: radius,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primary.withValues(alpha: 0.15),
+          child: Text(
+            fallbackText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              fontSize: radius / 1.6,
             ),
-    );
+          ),
+        ),
+        errorWidget: (context, url, error) => CircleAvatar(
+          radius: radius,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primary.withValues(alpha: 0.15),
+          child: Text(
+            fallbackText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+              fontSize: radius / 1.6,
+            ),
+          ),
+        ),
+      );
+    } else {
+      return CircleAvatar(
+        radius: radius,
+        backgroundColor: Theme.of(
+          context,
+        ).colorScheme.primary.withValues(alpha: 0.15),
+        child: Text(
+          fallbackText,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: radius / 1.6,
+          ),
+        ),
+      );
+    }
   }
 }

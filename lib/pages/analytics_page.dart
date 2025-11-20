@@ -1,5 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../providers/app_state.dart';
 import '../services/analytics_service.dart';
 import '../services/database_service.dart';
 import '../services/analytics_cache_service.dart';
@@ -24,7 +27,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   ChatStatistics? _overallStats;
   List<ContactRanking>? _contactRankings;
   List<ContactRanking>? _allContactRankings; // 保存所有排名
-  Map<String, String> _avatarUrls = {}; // 排名联系人头像
 
   // 加载进度状态
   String _loadingStatus = '';
@@ -121,7 +123,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               _loadingStatus = '完成（使用缓存数据）';
               _isLoading = false;
             });
-            await _loadAvatarUrlsForRankings();
             await logger.debug(
               'AnalyticsPage',
               '使用缓存数据完成，总消息数: ${_overallStats?.totalMessages}',
@@ -140,7 +141,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           _loadingStatus = '完成（从缓存加载）';
           _isLoading = false;
         });
-        await _loadAvatarUrlsForRankings();
         await logger.debug(
           'AnalyticsPage',
           '缓存加载完成，总消息数: ${_overallStats?.totalMessages}, 联系人数: ${_allContactRankings?.length}',
@@ -268,9 +268,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final displayNames = await widget.databaseService.getDisplayNames(
       privateSessions.map((s) => s.username).toList(),
     );
-    // 预取头像
+    // 预取头像（使用全局缓存）
     try {
-      _avatarUrls = await widget.databaseService.getAvatarUrls(
+      final appState = context.read<AppState>();
+      await appState.fetchAndCacheAvatars(
         privateSessions.map((s) => s.username).toList(),
       );
     } catch (_) {}
@@ -364,27 +365,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     return topRankings;
   }
 
-  Future<void> _loadAvatarUrlsForRankings() async {
-    final rankings = _allContactRankings;
-    if (rankings == null || rankings.isEmpty) {
-      if (mounted) {
-        setState(() => _avatarUrls = {});
-      }
-      return;
-    }
-
-    try {
-      final usernames = rankings.map((r) => r.username).toList();
-      final avatarMap = await widget.databaseService.getAvatarUrls(usernames);
-      if (!mounted) return;
-      setState(() {
-        _avatarUrls = avatarMap;
-      });
-    } catch (_) {
-      // 忽略头像获取失败
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -413,7 +393,10 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
-          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1),
+          bottom: BorderSide(
+            color: Colors.grey.withValues(alpha: 0.1),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
@@ -852,7 +835,8 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                   children: _contactRankings!.asMap().entries.map((entry) {
                     final index = entry.key;
                     final ranking = entry.value;
-                    final avatarUrl = _avatarUrls[ranking.username];
+                    final appState = Provider.of<AppState>(context);
+                    final avatarUrl = appState.getAvatarUrl(ranking.username);
                     return ListTile(
                       key: ValueKey('${ranking.username}_$index'),
                       leading: _AvatarWithRank(
@@ -865,25 +849,21 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                           ranking.displayName,
                           ranking.username,
                         ),
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodyLarge
-                            ?.copyWith(fontWeight: FontWeight.w600),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: Text(
                         '发送: ${ranking.sentCount} | 接收: ${ranking.receivedCount}',
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurface
-                                  .withValues(alpha: 0.6),
-                            ),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                       trailing: Text(
                         '${ranking.messageCount}',
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     );
@@ -929,31 +909,63 @@ class _AvatarWithRank extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasAvatar = avatarUrl != null && avatarUrl!.isNotEmpty;
-    final fallbackText =
-        StringUtils.getFirstChar(displayName, defaultChar: '聊');
+    final fallbackText = StringUtils.getFirstChar(
+      displayName,
+      defaultChar: '聊',
+    );
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        CircleAvatar(
-          radius: 22,
-          backgroundColor: hasAvatar
-              ? Colors.transparent
-              : Theme.of(context)
-                  .colorScheme
-                  .primary
-                  .withValues(alpha: 0.12),
-          backgroundImage: hasAvatar ? NetworkImage(avatarUrl!) : null,
-          child: hasAvatar
-              ? null
-              : Text(
-                  fallbackText,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+        if (hasAvatar)
+          CachedNetworkImage(
+            imageUrl: avatarUrl!,
+            imageBuilder: (context, imageProvider) => CircleAvatar(
+              radius: 22,
+              backgroundColor: Colors.transparent,
+              backgroundImage: imageProvider,
+            ),
+            placeholder: (context, url) => CircleAvatar(
+              radius: 22,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.12),
+              child: Text(
+                fallbackText,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
                 ),
-        ),
+              ),
+            ),
+            errorWidget: (context, url, error) => CircleAvatar(
+              radius: 22,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.12),
+              child: Text(
+                fallbackText,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          )
+        else
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.12),
+            child: Text(
+              fallbackText,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
         Positioned(
           bottom: -4,
           right: -4,

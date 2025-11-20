@@ -1976,7 +1976,9 @@ class _DataManagementPageState extends State<DataManagementPage>
               decoration: BoxDecoration(
                 color: file.isDecrypted
                     ? Colors.green.withValues(alpha: 0.1)
-                    : Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                    : Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -2139,7 +2141,9 @@ class _DataManagementPageState extends State<DataManagementPage>
             ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.1),
               width: 1,
             ),
           ),
@@ -2493,9 +2497,8 @@ class _DataManagementPageState extends State<DataManagementPage>
                                 Container(
                                   padding: const EdgeInsets.all(10),
                                   decoration: BoxDecoration(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.primary.withValues(alpha: 0.15),
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.15),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: SizedBox(
@@ -2690,8 +2693,9 @@ class _DataManagementPageState extends State<DataManagementPage>
                                 _showOnlyUndecrypted = value;
                               });
                             },
-                            activeThumbColor:
-                                Theme.of(context).colorScheme.primary,
+                            activeThumbColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
                           ),
                         ),
                         const SizedBox(width: 4),

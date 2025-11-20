@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
 import '../models/message.dart';
 import '../utils/string_utils.dart';
@@ -232,40 +233,102 @@ class _MessageBubbleState extends State<MessageBubble> {
       ),
       const SizedBox(width: 8),
       // 头像
-      CircleAvatar(
-        radius: 18,
-        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-        backgroundImage: (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
-            ? NetworkImage(widget.avatarUrl!)
-            : null,
-        child: (widget.avatarUrl == null || widget.avatarUrl!.isEmpty)
-            ? Icon(
-                Icons.person,
-                size: 20,
-                color: Theme.of(context).colorScheme.primary,
-              )
-            : null,
-      ),
+      if (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
+        CachedNetworkImage(
+          imageUrl: widget.avatarUrl!,
+          imageBuilder: (context, imageProvider) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.2),
+            backgroundImage: imageProvider,
+          ),
+          placeholder: (context, url) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.2),
+            child: Icon(
+              Icons.person,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          errorWidget: (context, url, error) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.primary.withValues(alpha: 0.2),
+            child: Icon(
+              Icons.person,
+              size: 20,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+        )
+      else
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.primary.withValues(alpha: 0.2),
+          child: Icon(
+            Icons.person,
+            size: 20,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
     ];
   }
 
   List<Widget> _buildFromOtherLayout(BuildContext context) {
     return [
       // 头像
-      CircleAvatar(
-        radius: 18,
-        backgroundColor: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.2),
-        backgroundImage: (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
-            ? NetworkImage(widget.avatarUrl!)
-            : null,
-        child: (widget.avatarUrl == null || widget.avatarUrl!.isEmpty)
-            ? Icon(
-                Icons.person,
-                size: 20,
-                color: Theme.of(context).colorScheme.secondary,
-              )
-            : null,
-      ),
+      if (widget.avatarUrl != null && widget.avatarUrl!.isNotEmpty)
+        CachedNetworkImage(
+          imageUrl: widget.avatarUrl!,
+          imageBuilder: (context, imageProvider) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.2),
+            backgroundImage: imageProvider,
+          ),
+          placeholder: (context, url) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.2),
+            child: Icon(
+              Icons.person,
+              size: 20,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+          ),
+          errorWidget: (context, url, error) => CircleAvatar(
+            radius: 18,
+            backgroundColor: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.2),
+            child: Icon(
+              Icons.person,
+              size: 20,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+          ),
+        )
+      else
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: Theme.of(
+            context,
+          ).colorScheme.secondary.withValues(alpha: 0.2),
+          child: Icon(
+            Icons.person,
+            size: 20,
+            color: Theme.of(context).colorScheme.secondary,
+          ),
+        ),
       const SizedBox(width: 8),
       // 消息气泡
       Flexible(
@@ -326,7 +389,9 @@ class _MessageBubbleState extends State<MessageBubble> {
   Color _getMessageBubbleColor(BuildContext context) {
     // 系统消息单独弱化显示
     if (widget.message.isSystemMessage) {
-      return Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
+      return Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5);
     }
     // 对方的所有消息（包含特殊类型）统一使用与文本一致的浅色背景
     if (!widget.isFromMe) {
