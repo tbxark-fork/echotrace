@@ -46,7 +46,6 @@ app.*.map.json
 
 # Go 解密模块
 go_decrypt/go.sum
-*.dll
 *.dylib
 *.so
 go_decrypt/*.h
