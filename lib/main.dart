@@ -1,9 +1,18 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'cli/cli_export_runner.dart';
 import 'providers/app_state.dart';
 import 'pages/home_page.dart';
 
-void main() {
+Future<void> main(List<String> args) async {
+  final cliRunner = CliExportRunner();
+  final cliExitCode = await cliRunner.tryHandle(args);
+  if (cliExitCode != null) {
+    exit(cliExitCode);
+  }
+
   runApp(const EchoTraceApp());
 }
 

@@ -4,20 +4,43 @@
 #include <io.h>
 #include <stdio.h>
 #include <windows.h>
+#include <fcntl.h>
 
 #include <iostream>
 
+void RedirectIOToConsole() {
+  // Force UTF-8 code page for consistent console output
+  SetConsoleOutputCP(CP_UTF8);
+  SetConsoleCP(CP_UTF8);
+
+  FILE *unused;
+  if (freopen_s(&unused, "CONOUT$", "w", stdout)) {
+    _dup2(_fileno(stdout), 1);
+  }
+  if (freopen_s(&unused, "CONOUT$", "w", stderr)) {
+    _dup2(_fileno(stdout), 2);
+  }
+  // optional: stdin
+  freopen_s(&unused, "CONIN$", "r", stdin);
+  // keep text mode with UTF-8 code page
+  _setmode(_fileno(stdout), _O_TEXT);
+  _setmode(_fileno(stderr), _O_TEXT);
+  _setmode(_fileno(stdin), _O_TEXT);
+  std::ios::sync_with_stdio();
+  FlutterDesktopResyncOutputStreams();
+}
+
+bool AttachToParentConsole() {
+  if (::AttachConsole(ATTACH_PARENT_PROCESS)) {
+    RedirectIOToConsole();
+    return true;
+  }
+  return false;
+}
+
 void CreateAndAttachConsole() {
   if (::AllocConsole()) {
-    FILE *unused;
-    if (freopen_s(&unused, "CONOUT$", "w", stdout)) {
-      _dup2(_fileno(stdout), 1);
-    }
-    if (freopen_s(&unused, "CONOUT$", "w", stderr)) {
-      _dup2(_fileno(stdout), 2);
-    }
-    std::ios::sync_with_stdio();
-    FlutterDesktopResyncOutputStreams();
+    RedirectIOToConsole();
   }
 }
 

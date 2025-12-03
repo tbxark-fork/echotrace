@@ -51,7 +51,7 @@
     ```c
     wcdb_status wcdb_open_account(const char* session_db_path, const char* hex_key, wcdb_handle* out_handle);
     ```
-    *   `session_db_path`: 核心数据库路径（通常是 `MicroMsg.db` 或 `EnMicroMsg.db`）。
+    *   `session_db_path`: 核心数据库路径（`db_storage`）。
         *   *智能查找*：DLL 会自动在同级目录下查找并挂载关联的 `message_*.db` 和 `contact*.db`，无需手动指定。
     *   `hex_key`: 64位十六进制密钥。
     *   `out_handle`: 成功时，此指针将接收一个非零的句柄值。

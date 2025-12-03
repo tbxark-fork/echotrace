@@ -66,6 +66,25 @@ EchoTrace 是一个**完全本地**的微信聊天记录导出、分析与年度
 
 解密完成后，进入 **数据分析** 页面，即可开始探索你的年度报告、好友报告和详细聊天记录了
 
+###  Windows 命令行导出
+
+在 Windows 上可直接使用命令行导出聊天记录（需要先在应用内完成密钥配置并解密数据库）：
+
+```powershell
+# 将所有会话按指定格式导出到目标目录
+echotrace.exe -e C:\Exports --format html --all
+
+# 按日期范围导出（默认 JSON）
+echotrace.exe -e C:\Exports --start 2024-01-01 --end 2024-12-31
+```
+
+参数说明：
+
+- `-e <目录>` 必填，导出目录
+- `--format json|html|excel` 选填，默认 `json`
+- `--start YYYY-MM-DD` / `--end YYYY-MM-DD` 选填，指定时间范围
+- `--all` 忽略时间范围，导出全部
+
 ##  面向开发者 
 
 如果你想从源码构建或为项目贡献代码，请遵循以下步骤：
