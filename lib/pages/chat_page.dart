@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/gestures.dart' show ScrollDirection;
 import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../models/chat_session.dart';
