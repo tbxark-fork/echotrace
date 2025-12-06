@@ -292,6 +292,13 @@ class ChatSession {
     if (username.contains('@openim')) return false;
     if (username.contains('service_')) return false;
 
+    if (username == 'brandsessionholder') return false; // 订阅号/服务号文件夹
+    if (username == 'brandservicesessionholder') return false; 
+    if (username == 'notifymessage') return false;     // 服务通知
+    if (username == 'opencustomerservicemsg') return false; // 客户服务通知
+    if (username == 'notification_messages') return false; // 另一类系统通知
+    if (username == 'userexperience_alarm') return false; // 某些版本的用户体验报告
+
     // 统一过滤逻辑：
     // 1. 群聊 (@chatroom)
     // 2. 标准wxid账号 (wxid_)
