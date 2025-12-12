@@ -380,7 +380,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
         return 'JSON';
       case 'html':
         return 'HTML';
-      case 'excel':
+      case 'xlsx':
         return 'Excel';
       default:
         return format.toUpperCase();
@@ -810,7 +810,7 @@ class _ChatExportPageState extends State<ChatExportPage> {
                   const SizedBox(height: 12),
                   _buildFormatOption('json', 'JSON', '结构化数据格式，便于程序处理'),
                   _buildFormatOption('html', 'HTML', '网页格式，便于浏览和分享'),
-                  _buildFormatOption('excel', 'Excel', '表格格式，便于数据分析'),
+                  _buildFormatOption('xlsx', 'Excel', '表格格式，便于数据分析'),
                   const SizedBox(height: 24),
                 ],
               ),
@@ -1007,9 +1007,7 @@ class _ExportProgressDialogState extends State<_ExportProgressDialog> {
           '_',
         );
         final timestamp = DateTime.now().millisecondsSinceEpoch;
-        final extension = widget.format == 'json'
-            ? 'json'
-            : (widget.format == 'html' ? 'html' : 'xlsx');
+        final extension = widget.format;
         final filePath =
             '${widget.exportFolder}${Platform.pathSeparator}${sanitizedName}_$timestamp.$extension';
 
@@ -1032,7 +1030,7 @@ class _ExportProgressDialogState extends State<_ExportProgressDialog> {
               filePath: filePath,
             );
             break;
-          case 'excel':
+          case 'xlsx':
             success = await exportService.exportToExcel(
               session,
               messages.reversed.toList(),
